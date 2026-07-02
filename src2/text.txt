@@ -1,0 +1,206 @@
+# 🏮 My Heart, My Lantern
+
+### ✨ A 3D Interactive Love Experience with AR Finale  
+A birthday gift experience built with Three.js
+
+---
+
+## 💖 Description
+
+A heartfelt 3D web experience built with Three.js that takes the user on a cinematic emotional journey.
+
+It begins with a scroll-driven story inside a magical lantern, transitions into an interactive 3D lobby filled with personal interactions, and ends with an AR experience where a crown appears in the real world, along with her nickname and a photo capture moment.
+
+The goal is to create a memorable, emotional, and immersive digital gift.
+
+---
+
+## 🌙 Features / Flow Overview
+
+### 1. 🏮 Scroll Cinematic Journey
+
+- A glowing lantern appears in a dark scene
+- Scroll gradually zooms the camera toward it
+- The lantern grows and fills the screen
+- User enters inside the lantern
+- Inside: floating green particles and soft magical lighting
+- Text appears:
+  > "All souls I only see one"
+- Continued scroll reveals:
+  - a Violet Purple light
+  - Her nickname
+  - A cinematic 3D title at top:
+    > "My Heart, My Lantern"
+
+---
+
+### 2. 🏠 Interactive Lobby
+
+After the scroll story:
+
+- Transition into a 3D interactive lobby scene
+- Contains 3 main elements:
+  - “Me” character
+  - “Her” character
+  - Multiple “+” interaction nodes
+
+#### Interactions:
+
+- Clicking **Me**
+  → 3D text: “HII CUTIE 💖”
+
+- Clicking **Her**
+  → heart particles / emotional animation
+
+- Clicking **+ nodes**
+  → unique romantic messages appear:
+  - “You don’t need friends, you have each other”
+  - “You are my safe place”
+  - “You are my favorite person”
+
+- Top center UI button:
+  → “HAPPY BDAY”
+
+---
+
+### 3. 👑 AR Crown Finale
+
+When clicking “HAPPY BDAY”:
+
+- Switch to AR mode (WebXR)
+- A golden magical crown appears in real space
+- Sparkles and particles surround it
+- Her nickname appears under the crown
+- User can adjust position by moving phone
+- Button appears:
+  → 📸 Take Photo
+
+Result:
+- Saves a memorable AR snapshot
+
+---
+
+## 🧰 Technical Requirements
+
+### Engine / Library
+- Three.js (r150+)
+- Cannon-es (optional physics)
+- GSAP (recommended for scroll animations)
+
+### Languages
+- JavaScript (ES6+)
+- HTML5
+- CSS3
+
+### Rendering
+- WebGL 2.0
+
+### Interactions
+- Raycasting (click detection)
+- Scroll-based animation system
+- State machine (scroll → lobby → AR)
+
+### AR / XR
+- WebXR (AR mode support)
+
+### Devices
+- Laptop (Lenovo LOQ usage of camera and aspect ratio)
+- plus: Desktop and Mobile (more professional)
+
+---
+
+## 📦 Assets / Models Required
+
+### 🧍 3D Models
+- Magical lantern (main scroll object)
+- Lobby environment (simple room or floating platform)
+- “Me” avatar (simple stylized character or icon)
+- “Her” avatar (heart / stylized model)
+- Crown model (detailed, golden, emissive)
+- Optional: decorative + signs / icons/ particles textures
+
+---
+
+### 🎨 Textures & Materials
+- Emissive lantern glow texture
+- Green magical particle texture
+- Purple Violet Color particle bigger and Shinier than the rest
+- Gold crown material (metallic + roughness PBR)
+- UI panel textures (optional)
+
+---
+
+### ✨ Particles
+- Sparkle particles (AR scene)
+- Green floating particles (lantern interior)
+- Heart particles (lobby interactions)
+
+---
+
+### 🔤 Fonts
+- Elegant decorative title font
+- Clean readable UI font
+
+---
+
+### 🔊 Audio (Optional but Recommended)
+- Ambient magical background music
+- Soft UI click sounds
+- Reveal sound effects
+
+---
+
+## 📁 Suggested Project Structure
+/project-root
+│
+├── index.html
+├── /css
+│ └── style.css
+│
+├── /js
+│ ├── main.js
+│ ├── scroll-scene.js
+│ ├── lobby.js
+│ ├── ar-scene.js
+│ └── utils.js
+│
+├── /models
+│ ├── lantern.glb
+│ ├── lobby.glb
+│ ├── crown.glb
+│ ├── me.glb
+│ ├── her.glb
+│
+├── /textures
+│ ├── particles/
+│ └── ui/
+│
+├── /audio
+│ └── bgm.mp3
+│
+└── /assets
+├── fonts/
+└── icons/
+
+## 🔁 User Journey Summary
+
+- Scroll ↓ → Enter Lantern 🏮  
+- Inside Lantern → Message Reveal ✨  
+- Continue Scroll → Name + Title 💖  
+- Transition → Lobby 🏠  
+- Click Interactions → Emotional Messages 💬  
+- Click “HAPPY BDAY” → AR Mode 👑  
+- AR Crown → Nickname + Sparkles ✨  
+- Take Photo 📸 → Memory Saved 💾  
+
+---
+
+## 💡 Notes
+
+- Focus on **lighting, timing, and emotion**
+- Keep models simple, effects make it powerful
+- Smooth camera movement is critical
+- This is not just a website — it’s an emotional experience
+- Optimize for smooth performance (60fps target)
+
+---
