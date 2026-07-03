@@ -28,6 +28,7 @@ scene.add(ambientLight, directionalLight)
 /* workspace */
 const lanternGroup = new THREE.Group()
 const particlesGroup = new THREE.Group()
+particlesGroup.position.y = -19
 const lobbyGroup = new THREE.Group()
 const arGroup = new THREE.Group()
 
@@ -95,7 +96,7 @@ const positions = new Float32Array(count * 3)
 for (let i = 0; i < count; i++) {
     const i3 = i * 3
     positions[i3 + 0] = (Math.random() - 0.5) * 40
-    positions[i3 + 1] = Math.random() * 4 - 21
+    positions[i3 + 1] = (Math.random() - 0.5) * 8
     positions[i3 + 2] = (Math.random() - 0.5) * 40
 }
 function loadModel(path) {
@@ -106,14 +107,18 @@ function loadModel(path) {
 const particlesGeometry = new THREE.BufferGeometry()
 particlesGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
 const particlesMaterial = new THREE.PointsMaterial({ size: 0.1, color: 'green', blending: THREE.AdditiveBlending })
+const violetParticle = new THREE.Group()
+violetParticle.position.x = -0.5
+violetParticle.position.y = -0.5
 const fontLoader = new FontLoader()
-let nickname=null
+let nickname = null
+let textIntro = null
 fontLoader.load(
-    '/fonts/helvetiker_regular.typeface.json',
+    '/fonts/helvetiker_bold.typeface.json',
     (font) => {
-        const textGeometry = new TextGeometry('VioltHunter#EUNE', {
+        const textGeometry = new TextGeometry('VioletHunter#EUNE', {
             font: font,
-            size: 0.5,
+            size: 0.3,
             height: 0.2,
             curveSegments: 12,
             bevelEnabled: true,
@@ -122,9 +127,27 @@ fontLoader.load(
             bevelOffset: 0,
             bevelSegments: 5
         })
+        textGeometry.computeBoundingBox()
+        const bbox = textGeometry.boundingBox
+        const centerOffsetX = -0.5 * (bbox.max.x - bbox.min.x)
+        const centerOffsetY = -0.5 * (bbox.max.y - bbox.min.y)
+        const centerOffsetZ = -0.5 * (bbox.max.z - bbox.min.z)
+
+        textGeometry.translate(centerOffsetX, centerOffsetY, centerOffsetZ)
         const textMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff })
         nickname = new THREE.Mesh(textGeometry, textMaterial)
-        particlesGroup.add(nickname)
+        violetParticle.add(nickname)
+
+        const textIntroGeometry = new TextGeometry('VioletHunter#EUNE', {
+            font: font,
+            size: 0.3,
+            height: 0,
+            curveSegments: 12,
+            bevelEnabled: false 
+        })
+        textIntro.translate(centerOffsetX,-2,centerOffsetZ)
+        textIntro = new THREE.Mesh(textIntroGeometry, textMaterial)
+        violetParticle.add(textIntro)
     }
 )
 
@@ -165,8 +188,7 @@ Promise.all([
     //particles
 
     particles = new THREE.Points(particlesGeometry, particlesMaterial)
-    const violetParticle = new THREE.Group()
-    const nameTag=new TextGeom
+
     particlesGroup.add(particles, violetParticle)
 
     initTimelines()
