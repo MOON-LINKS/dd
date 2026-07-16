@@ -90,3 +90,31 @@ function renderLoop() {
     renderer.render(scene, camera)
 }
 setupFaceLandmarker()
+
+
+
+        /*
+        video, canvas {
+    transform: scaleX(-1);
+}
+function takePhoto() {
+    // create a temporary canvas same size as screen
+    const tempCanvas = document.createElement('canvas')
+    tempCanvas.width = window.innerWidth
+    tempCanvas.height = window.innerHeight
+    const ctx = tempCanvas.getContext('2d')
+
+    // draw video frame first (background)
+    ctx.save()
+    ctx.scale(-1, 1)  // mirror to match CSS transform
+    ctx.drawImage(video, -tempCanvas.width, 0, tempCanvas.width, tempCanvas.height)
+    ctx.restore()
+
+    // draw Three.js canvas on top
+    ctx.drawImage(canvas, 0, 0)
+
+    // convert to image URL
+    const imageURL = tempCanvas.toDataURL('image/png')
+    return imageURL
+}
+        */
