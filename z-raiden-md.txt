@@ -4,6 +4,8 @@
 
 RAIDEN is a proactive DDoS/network-attack detection and mitigation system, designed to outperform traditional signature-based Intrusion Detection Systems (IDS) by modeling traffic as a statistical process rather than pattern-matching against known attack signatures. Its core claim: instead of detecting an attack only after it fully matches a known pattern, RAIDEN detects the *statistical drift* toward an attack regime before the attack is fully underway.
 
+RAIDEN is designed as a **fully scalable, self-learning closed loop**: detection (MMPP + GRU) feeds mitigation (RL agent + mitigation model), and mitigation outcomes feed back into the loop to refine future detection/decision quality over time, rather than operating as a static, one-shot pipeline.
+
 ## 2. High-Level Pipeline
 
 ```
@@ -61,8 +63,10 @@ Idle time, queue time, and related statistics are derived by treating the MMPP a
 ## 5. Future Work: RL-Based Mitigation
 
 - Framed as a Markov Decision Process (MDP): RL agent takes detected/predicted attack outputs plus source IP information as input, and selects a mitigation action (IP blocking, rate limiting, resource reallocation, or a combination).
-- Mitigation model executes the action; a success/fail outcome is fed back to the RL agent to refine future decisions and, longer-term, to help correct/stabilize MMPP's own outputs.
-- Open design question: reward function is currently conceived as sparse (success/fail), which is typically harder to train on than a shaped/graduated reward (e.g., partial credit for traffic reduction, penalty for blocking legitimate IPs). Action space (single action vs. combinable actions) also not yet fully specified.
+- Mitigation model executes the action; outcome is fed back to the RL agent to refine future decisions and, longer-term, to help correct/stabilize MMPP's own outputs.
+- **Reward design (updated)**: reward/penalty is graduated by outcome level rather than flat success/fail — e.g., a correctly blocked attacker yields a high reward, a correctly ignored legitimate IP yields a smaller positive reward, an incorrect/false-positive block yields a penalty, and a missed attack (false negative) yields a larger penalty. Disproportionate responses (e.g., a full block where rate-limiting would have sufficed) are penalized even when technically "successful," to discourage over-aggressive mitigation.
+- **False-positive detection (updated)**: a parallel, independently-running self-checking model/service verifies mitigation actions — a blocked IP can query an API to check its block status; if flagged incorrectly, the system unblocks it automatically and routes a penalty signal back to the RL agent, without requiring human/manual intervention.
+- **Mitigation execution (updated)**: intended primarily as an **SDN (Software-Defined Networking) controller integration** deployed on the user's/organization's network — RAIDEN's mitigation model issues decisions to the SDN controller's northbound API, which pushes flow rules to network switches upstream of the protected server(s), blocking or rate-limiting malicious traffic before it reaches the server itself. This requires SDN-capable infrastructure (SDN-capable switches + a running controller such as ONOS/Ryu/OpenDaylight) to already be present or deployed in the target environment; a non-SDN fallback (firewall-API or reverse-proxy level mitigation) remains a lower-priority future consideration for environments without SDN infrastructure.
 
 ## 6. Novel Contributions (Claimed)
 
@@ -79,7 +83,7 @@ Idle time, queue time, and related statistics are derived by treating the MMPP a
 - **Potential circularity in GRU training labels**: GRU state labels are derived from the same MMPP model being evaluated; without independent ground truth, it's unclear whether the GRU is learning genuine attack signatures or simply learning to reproduce MMPP's own state inferences (including its errors). Longer-term mitigation planned via RL feedback loop, not yet implemented.
 - **Self-similarity / long-range dependence critique**: real network traffic is empirically known (Leland et al., "Ethernet traffic is self-similar") to be bursty at all timescales, unlike Poisson processes (where variance = mean and bursts smooth out over longer windows). RAIDEN's position: MMPP is a deliberate accuracy-vs-tractability tradeoff — more realistic than plain Poisson (since burstiness emerges from state-switching) but more analytically tractable than full self-similar/fractional traffic models, which lack closed-form equilibrium/queueing equations.
 - **"XGBoost comparison" methodology**: care is needed to ensure XGBoost's classification target is independent of MMPP's own output (currently: XGBoost classifies into states 1/2/3, and the resulting λ array is compared post hoc to MMPP's — this avoids direct circularity, but XGBoost's own state-classification accuracy has not yet been separately reported).
-- **RL reward design and action space** are not yet fully specified (see Section 5).
+- **RL action space**: whether actions are strictly single-choice or combinable (e.g., IP block + rate limit simultaneously) is not yet fully specified. Reward structure itself has since been refined to a graduated, outcome-level scheme (see Section 5).
 - **Direct-jump vs. staged state transitions**: whether Q allows direct normal→attack transitions (bypassing suspicious) or forces a staged path is a modeling choice, not a mathematical necessity, and should be explicitly justified based on the attack types RAIDEN is meant to catch (sudden pre-coordinated botnet floods vs. gradual ramp-ups).
 
 ## 8. Suggested Framing for External Discussion
