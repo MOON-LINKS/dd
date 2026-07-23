@@ -1,0 +1,87 @@
+# RAIDEN — Reinforced Adaptive Intelligent Defensive Engine for Networks
+
+## 1. Purpose
+
+RAIDEN is a proactive DDoS/network-attack detection and mitigation system, designed to outperform traditional signature-based Intrusion Detection Systems (IDS) by modeling traffic as a statistical process rather than pattern-matching against known attack signatures. Its core claim: instead of detecting an attack only after it fully matches a known pattern, RAIDEN detects the *statistical drift* toward an attack regime before the attack is fully underway.
+
+## 2. High-Level Pipeline
+
+```
+Live traffic
+   → [ML capture layer: HMM (hmmlearn)] → P matrix (DTMC) + Λ array
+   → [P→Q conversion] → Q matrix (CTMC generator)
+   → [MMPP model] → equilibrium probabilities (π), mean arrival rate (λ̄),
+                     idle time, queue time, and other analytical/statistical outputs
+   → [GRU #1: "Prediction Model"] → predicts likelihood/proximity to attack state
+   → [GRU #2: "Early Detection Model"] → takes MMPP outputs + GRU #1 outputs,
+                                          flags potential attack before it fully forms
+   → [Future: RL agent (MDP-based defense selection)] → chooses mitigation action(s):
+                                          rate limiting, IP blocking, resource
+                                          reallocation, or a combination
+   → [Mitigation model] → executes action on the server/network
+   → [Feedback: success/fail] → returned to RL agent to refine future decisions
+```
+
+## 3. Core Mathematical Foundation
+
+### 3.1 Poisson Process (base concept)
+A random arrival-counting process with a single, constant rate λ. Defining properties: memorylessness (time to next arrival is independent of elapsed wait time) and variance = mean.
+
+### 3.2 Markov Chain (state-switching mechanism)
+Governs how a hidden state (e.g., normal / suspicious / attack) transitions over time, with the next state depending only on the current state (memoryless property). Implemented as a Continuous-Time Markov Chain (CTMC) via a generator matrix Q.
+
+### 3.3 Markov-Modulated Poisson Process (MMPP)
+A Markov chain "modulates" (controls) the rate parameter of a Poisson process — each hidden state has its own arrival rate (λ_normal, λ_suspicious, λ_attack), and the Markov chain determines which rate is currently active. This produces bursty, state-correlated arrival patterns rather than a single flat Poisson rate — a deliberate middle ground between naive Poisson traffic models and full long-range-dependent/self-similar traffic models (see Section 6.4).
+
+RAIDEN currently uses **3 states**: normal, suspicious, attack.
+
+### 3.4 Q Matrix Construction
+- HMM (hmmlearn) produces a discrete-time transition probability matrix **P** and a Λ array, sampled at fixed Δt = 1 second.
+- Conversion to continuous-time generator matrix **Q**:
+  - Qij = Pij / Δt (i ≠ j) — since Δt = 1, Qij = Pij numerically in this implementation.
+  - Qii = −(sum of off-diagonal entries in that row) — required so each row of Q sums to zero (defining property of a valid generator matrix).
+- Note: Pii (probability of remaining in the same state) is **not** reused as Qii — it is discarded; Qii is independently constructed to satisfy the zero-row-sum property.
+
+### 3.5 Equilibrium Equations
+πQ = 0, subject to Σπᵢ = 1 → gives the long-run fraction of time spent in each state.
+
+### 3.6 Mean Arrival Rate
+λ̄ = Σ πᵢλᵢ (weighted average arrival rate across all states, weighted by time spent in each).
+
+### 3.7 Queueing Extras
+Idle time, queue time, and related statistics are derived by treating the MMPP as the arrival process into a queueing model (e.g., MMPP/M/1-style), giving operationally meaningful outputs beyond simple state classification.
+
+## 4. GRU Layer
+
+- **Why GRU**: A gated variant of RNN, chosen over vanilla RNN (solves vanishing gradients via gating), over LSTM (fewer parameters, faster training/inference, works better with limited labeled data — relevant since real time-sequence-aware, low-latency inference is required for real-time detection), and over Transformers (Transformers' attention benefits are more relevant for very long, high-dimensional raw sequences; RAIDEN's inputs are already compressed, structured MMPP-derived features, so GRU's efficiency/latency profile fits better).
+- **GRU #1 (Prediction Model)**: consumes MMPP outputs, predicts proximity/likelihood of reaching the attack state.
+- **GRU #2 (Early Detection Model)**: a separately trained model; consumes both MMPP outputs and GRU #1's predicted outputs, aiming to flag a potential attack before it fully develops.
+- Open design question: the precise supervised target/label for "closeness to attack state" is not yet firmly defined (regression score vs. classification), and ground-truth labels for training currently derive from the synthetic MMPP-generated state sequences (see Section 6.1 on circularity risk).
+
+## 5. Future Work: RL-Based Mitigation
+
+- Framed as a Markov Decision Process (MDP): RL agent takes detected/predicted attack outputs plus source IP information as input, and selects a mitigation action (IP blocking, rate limiting, resource reallocation, or a combination).
+- Mitigation model executes the action; a success/fail outcome is fed back to the RL agent to refine future decisions and, longer-term, to help correct/stabilize MMPP's own outputs.
+- Open design question: reward function is currently conceived as sparse (success/fail), which is typically harder to train on than a shaped/graduated reward (e.g., partial credit for traffic reduction, penalty for blocking legitimate IPs). Action space (single action vs. combinable actions) also not yet fully specified.
+
+## 6. Novel Contributions (Claimed)
+
+1. **Adaptive/flexible deployment**: designed to work across environments of different scale (small/large) and burstiness (e.g., smart home vs. healthcare/industrial IoT), by adjusting equilibrium thresholds to context rather than using a single fixed threshold — e.g., a healthcare server's "normal" traffic baseline should shift during a disaster event without being misclassified as an attack.
+2. **Proactive vs. reactive detection**: aims to flag attack-state drift before an attack is fully expressed, rather than matching against known signatures after the fact (though see Section 6.3 — this claim needs careful framing, as some anomaly-based IDS also claim proactivity).
+3. **Interpretability**: MMPP provides closed-form analytical/statistical outputs (equilibrium probabilities, idle time, queue time, per-state timing) that are mathematically derived rather than black-box, unlike pure ML approaches.
+4. **Comparative finding (MMPP vs. XGBoost for traffic modeling)**: MMPP requires no training data or training time and produces richer analytical outputs; a supervised XGBoost classifier (grouping traffic into states 1/2/3) produced a λ array reasonably close to MMPP's, suggesting MMPP is preferable for traffic modeling, but that combining an ML pre-processing layer with MMPP (RAIDEN's actual architecture) outperforms either alone. Ranking claimed: (1) ML+MMPP combined, (2) MMPP alone, (3) XGBoost alone.
+
+## 7. Known Weaknesses / Open Questions (for future review — not yet resolved)
+
+- **Synthetic data validity**: All 20 training/testing datasets (10 with 2-state variation, 10 with 3-state variation, ~5,000 tuples each, 1-second sampling) were self-generated via an independent simulator (not itself an MMPP process, avoiding direct circularity), covering varied environment sizes and burstiness levels. Still open: what generative assumptions did the simulator itself use, and how well do those match real DDoS traffic behavior?
+- **No confirmed train/test split methodology yet** — reported accuracy figures (89% prediction, 98% detection, ~91% combined) have not yet been verified as coming from held-out data versus data used in training. This needs to be resolved before the numbers can be considered validated.
+- **Isolation Forest → "attack state" labeling lacks independent ground truth**: anomalies flagged by Isolation Forest (used to detect a previously-unseen attack state when training only had 2-state data) are currently assumed to correspond to the attack state without a confirmed, independently verified ground truth (e.g., a deliberately injected, known attack event to check against). Risk: false positives (e.g., legitimate traffic spikes) could be mislabeled as "attack" and corrupt downstream supervised training.
+- **Potential circularity in GRU training labels**: GRU state labels are derived from the same MMPP model being evaluated; without independent ground truth, it's unclear whether the GRU is learning genuine attack signatures or simply learning to reproduce MMPP's own state inferences (including its errors). Longer-term mitigation planned via RL feedback loop, not yet implemented.
+- **Self-similarity / long-range dependence critique**: real network traffic is empirically known (Leland et al., "Ethernet traffic is self-similar") to be bursty at all timescales, unlike Poisson processes (where variance = mean and bursts smooth out over longer windows). RAIDEN's position: MMPP is a deliberate accuracy-vs-tractability tradeoff — more realistic than plain Poisson (since burstiness emerges from state-switching) but more analytically tractable than full self-similar/fractional traffic models, which lack closed-form equilibrium/queueing equations.
+- **"XGBoost comparison" methodology**: care is needed to ensure XGBoost's classification target is independent of MMPP's own output (currently: XGBoost classifies into states 1/2/3, and the resulting λ array is compared post hoc to MMPP's — this avoids direct circularity, but XGBoost's own state-classification accuracy has not yet been separately reported).
+- **RL reward design and action space** are not yet fully specified (see Section 5).
+- **Direct-jump vs. staged state transitions**: whether Q allows direct normal→attack transitions (bypassing suspicious) or forces a staged path is a modeling choice, not a mathematical necessity, and should be explicitly justified based on the attack types RAIDEN is meant to catch (sudden pre-coordinated botnet floods vs. gradual ramp-ups).
+
+## 8. Suggested Framing for External Discussion
+
+RAIDEN's strongest, most defensible novelty claim is not "the only proactive system" (a claim vulnerable to counterexamples from anomaly-based IDS literature), but rather the **specific integrated combination**: an interpretable, mathematically-grounded MMPP traffic model with adaptive equilibrium thresholds, feeding a staged prediction → early-detection neural pipeline, feeding a (planned) reinforcement-learning-based mitigation decision loop — purpose-built for resource-constrained, bursty environments such as IoT, where existing IDS options are limited.
