@@ -4,7 +4,6 @@
 **Purpose of this document:** Full context so any AI model or developer can pick this up and understand the product, architecture, and decisions made so far without needing the original conversation.
 
 ---
-
 ## 1. What This Is
 
 A cross-industry SaaS that lets any company with moving/field-based workers manage: workers, jobs/tasks, hours worked, billing/invoices, expenses, and a public-facing "Bio" mini page — all from one dashboard.
