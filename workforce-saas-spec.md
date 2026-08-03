@@ -221,88 +221,9 @@ This is the core operational logic of the app.
 
 ---
 
-## 14. Database Schema (Consolidated So Far)
-
-### `plans`
-- `plan_id` (PK)
-- `name`
-- `max_workers`, `modules` (JSON list, or a separate `plan_features` join table)
-- `stripe_price_id_monthly`, `stripe_price_id_yearly`
-- `tap_plan_id`
-- `apple_product_id_monthly`, `apple_product_id_yearly`
-
-### `subscribed_services` (the entitlement / source-of-truth table)
-- `id` (PK)
-- `user_id` (FK → users)
-- `plan_id` (FK → plans)
-- `payment_provider` (stripe / tap / apple)
-- `external_subscription_id` (Stripe subscription ID / Apple original transaction ID / Tap subscription ID — lets incoming webhooks find the right row)
-- `since` (start date)
-- `updated_at`
-- `price` / `total_price` (increments by value subscribed over time)
-- `is_cancelled` (bool — set true to stop renewal once current period ends)
-- `is_active` (bool — this is the ONLY field the rest of the app checks for feature gating; never a live call to Stripe/Tap/Apple at request time)
-
-### `assets`
-- `id` (PK)
-- `owner_type` / `owner_id` (organization, worker, job, bio page, etc.)
-- `filename` (relative only, e.g. `logo.svg` — CDN base URL `cdn.mydomain.com/imgs/` prefixed in code, never stored in DB)
-
-### `users`
-- Standard auth fields + OTP verification status
-- Account deletion requires re-entering password + email as confirmation
-
-### `workers`
-- `id` (PK), `organization_id` (FK)
-- `name`, `profile_image` (→ `assets`), `id_document` (optional, → `assets`)
-- `pay_type` (`monthly` / `hourly`)
-- `monthly_amount` (used if `pay_type = monthly`)
-- `hourly_rate` (used if `pay_type = hourly`)
-- Note: `hours_logged` (via `day_assignments` below) is tracked regardless of `pay_type` — always feeds analytics/job-costing; `amount_owed` is calculated differently depending on `pay_type`, kept as a separate concern from raw hours
-
-### `jobs`
-- `id` (PK), `organization_id` (FK), `client_id` (FK)
-- `template_id` (built-in templates only in v1, not user-created)
-- `status` (pending / in progress / done)
-
-### `job_days`
-- `id` (PK), `job_id` (FK), `date`
-- `invoiced` (bool — true once an invoice covering this date has been generated; blocks or flags further edits)
-
-### `day_assignments`
-- `id` (PK), `job_day_id` (FK), `worker_id` (FK)
-- `hours` (editable; supports copy-paste from a prior day, including the hour value, then adjustable)
-- `edited_at`, `edited_by` (audit trail for retroactive edits)
-
-### `expenses`
-- `id` (PK), `organization_id` (FK)
-- `category`, `amount`, `date`, `recurring` (bool)
-- `linked_worker_id` (nullable FK), `linked_job_id` (nullable FK)
-
-### `upcoming_bills`
-- `id` (PK), `organization_id` (FK)
-- `amount`, `due_date`, `attached_image` (→ `assets`)
-- `is_paid` (bool)
-- `reminder_days_before` (e.g. 9 → reminder fires Aug 1 for an Aug 10 due date)
-- `linked_worker_id` (nullable FK), `linked_job_id` (nullable FK)
-- `converted_expense_id` (nullable FK → `expenses`, set once paid and converted/linked)
-
-### `invoices`
-- `id` (PK), `organization_id` (FK), `client_id` (FK)
-- `period_start`, `period_end`
-- Full breakdown fields: hours, rate/amount, paid, owed, revenue (generated via the PDF builder)
-
-### Loading/storage pattern for Workers/Jobs/Days
-- Tables above are the real source of truth (normalized, queryable for invoicing, per-day invoice-locking, and future analytics/AI).
-- At the API layer: one request returns a full JSON snapshot (a job's days + assignments) to hydrate Riverpod state in the app. Edits happen locally; a single Save button sends the changed snapshot back in one request, and the backend upserts it into these normalized tables.
-- Historical access window (12 months back at launch, 3 years as a future plan tier) is enforced as a query filter (`WHERE date >= NOW() - X months`) gated by plan — not a separate storage format. Older data can be archived to cheaper storage after the window closes and restored if the org upgrades.
-
----
-
 ## 13. Open Questions / Next Steps
 
 - [ ] Finalize pricing tiers with concrete feature/limit numbers per tier
-- [ ] Design full database schema (Workers, Jobs, Days, Expenses, Invoices, Plans, Entitlements, Assets, Bio Pages)
 - [ ] Design the Bio Page snapshot generation/caching mechanism in detail
 - [ ] Define exact invoice PDF layout/fields
 - [ ] Define email template list and content per template
@@ -311,4 +232,387 @@ This is the core operational logic of the app.
 
 ---
 
-*This document reflects the state of planning as of the current conversation. Treat Sections 1–12 as settled decisions unless explicitly revisited; Section 13 is the active backlog.*
+## 14. Database Schema
+
+> **Source of truth:** `schema.sql`. This section is a human-readable reference that mirrors it exactly. If the two ever conflict, the `.sql` file wins.
+
+### Conventions (apply to every table)
+- All primary keys are UUIDs (`gen_random_uuid()`)
+- Every table has `created_at` and `updated_at` (`TIMESTAMPTZ NOT NULL DEFAULT NOW()`), auto-maintained by the `set_updated_at()` trigger
+- Soft deletes via `deleted_at` (nullable) on `users`, `organizations`, `workers`, `clients`, `jobs`
+- All foreign keys declare explicit `ON DELETE` behaviour
+- PostgreSQL extensions required: `pgcrypto` (UUIDs), `citext` (case-insensitive email)
+
+---
+
+### Table overview (creation order — dependency safe)
+
+| # | Table | Purpose |
+|---|-------|---------|
+| 1 | `plans` | Subscription plan definitions and payment provider IDs |
+| 2 | `users` | Auth accounts; soft-deleted with email+password re-confirmation |
+| 3 | `organizations` | The core tenant unit; one owner user, one active plan |
+| 4 | `subscribed_services` | Entitlement source of truth — the ONLY table feature gating reads |
+| 5 | `assets` | Relative filenames for all uploaded files (CDN URL prefixed in code) |
+| 6 | `workers` | Employees/coaches/contractors belonging to an org |
+| 7 | `clients` | Client profiles linked to jobs |
+| 8 | `client_feedback` | Post-job star rating + comment per client per job |
+| 9 | `job_templates` | Built-in templates (not user-created in v1) |
+| 10 | `jobs` | A job/task belonging to an org and optionally a client |
+| 11 | `job_days` | One row per calendar day within a job |
+| 12 | `day_assignments` | Worker hours logged per job day; audit trail on retroactive edits |
+| 13 | `expenses` | External costs; optionally linked to a worker and/or job |
+| 14 | `upcoming_bills` | Money the org owes with a due date; reminder fires N days before |
+| 15 | `invoices` | Auto-generated monthly invoice per client/period |
+| 16 | `invoice_line_items` | Per-worker/per-job breakdown rows inside an invoice |
+| 17 | `bio_pages` | Public-facing org mini-page; stores static rendered HTML snapshot |
+| 18 | `bio_page_buttons` | Call/link/social buttons on a bio page, ordered by sort_order |
+| 19 | `referral_codes` | One auto-generated code per org (firstname + unique number) |
+| 20 | `referral_uses` | Records when a code is used; tracks reward issuance |
+
+---
+
+### `plans`
+| Column | Type | Notes |
+|--------|------|-------|
+| `plan_id` | UUID PK | |
+| `name` | VARCHAR(100) | e.g. "Starter", "Pro", "Business" |
+| `max_workers` | INT | `-1` = unlimited |
+| `modules` | JSONB | Array of module keys available, e.g. `["expenses","bio_page"]` |
+| `history_months` | INT | How far back the org can query historical data (default 12) |
+| `stripe_price_id_monthly` | VARCHAR(100) | nullable |
+| `stripe_price_id_yearly` | VARCHAR(100) | nullable |
+| `tap_plan_id` | VARCHAR(100) | nullable |
+| `apple_product_id_monthly` | VARCHAR(100) | nullable |
+| `apple_product_id_yearly` | VARCHAR(100) | nullable |
+| `is_active` | BOOLEAN | FALSE hides the plan from new signups (for retiring old plans) |
+
+---
+
+### `users`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `email` | CITEXT UNIQUE | Case-insensitive |
+| `password_hash` | TEXT | |
+| `otp_verified` | BOOLEAN | FALSE until OTP flow completed at registration |
+| `otp_code` | VARCHAR(10) | Cleared after verification |
+| `otp_expires_at` | TIMESTAMPTZ | nullable |
+| `full_name` | VARCHAR(200) | nullable |
+| `deleted_at` | TIMESTAMPTZ | Soft delete — set only after user re-confirms email + password |
+
+---
+
+### `organizations`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `owner_user_id` | UUID FK → users | ON DELETE RESTRICT |
+| `plan_id` | UUID FK → plans | ON DELETE RESTRICT |
+| `name` | VARCHAR(200) | |
+| `organization_type` | VARCHAR(50) | `construction` \| `gym` \| `tutoring` \| `contractor` \| `sales` \| `cleaning` \| … Drives all localized UI label keys |
+| `logo_filename` | VARCHAR(255) | Relative filename only — CDN base URL prefixed in code |
+| `deleted_at` | TIMESTAMPTZ | Soft delete |
+
+---
+
+### `subscribed_services`
+
+> **Critical:** `is_active` is the **only** field the rest of the app reads for feature gating. Never call Stripe/Tap/Apple at request time — this table is updated by webhook handlers and Apple server-to-server notifications.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `organization_id` | UUID FK → organizations | ON DELETE CASCADE |
+| `plan_id` | UUID FK → plans | ON DELETE RESTRICT |
+| `payment_provider` | VARCHAR(20) | `stripe` \| `tap` \| `apple` |
+| `external_subscription_id` | VARCHAR(255) | Stripe sub ID / Apple original transaction ID / Tap sub ID — used by webhooks to find this row |
+| `billing_cadence` | VARCHAR(10) | `monthly` \| `yearly` |
+| `since` | DATE | Subscription start date |
+| `active_until` | DATE | End of current paid period |
+| `price` | DECIMAL(10,2) | Amount charged per cycle |
+| `is_cancelled` | BOOLEAN | TRUE = do not renew, but `is_active` stays TRUE until `active_until` passes |
+| `is_active` | BOOLEAN | **THE only field the app checks.** Set by webhook handlers. |
+
+---
+
+### `assets`
+
+> Stores relative filenames only. CDN base URL (`cdn.mydomain.com/imgs/`) is prefixed in application code, never stored in the DB — so changing CDN requires updating one config value, not migrating data.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `owner_type` | VARCHAR(50) | Polymorphic: `organization` \| `worker` \| `bio_page` \| `upcoming_bill` |
+| `owner_id` | UUID | References the owning record (no FK — polymorphic) |
+| `filename` | VARCHAR(255) | Relative path only, e.g. `worker_abc123_id.png` |
+| `mime_type` | VARCHAR(100) | nullable |
+| `uploaded_at` | TIMESTAMPTZ | |
+
+---
+
+### `workers`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `organization_id` | UUID FK → organizations | ON DELETE CASCADE |
+| `name` | VARCHAR(200) | |
+| `profile_image_id` | UUID FK → assets | nullable, ON DELETE SET NULL |
+| `id_document_id` | UUID FK → assets | nullable — optional ID/passport/license upload |
+| `pay_type` | VARCHAR(10) | `monthly` \| `hourly` |
+| `monthly_amount` | DECIMAL(10,2) | Required when `pay_type = monthly`. Hours still tracked for analytics. |
+| `hourly_rate` | DECIMAL(10,2) | Required when `pay_type = hourly`. `amount_owed = hours × rate`. |
+| `deleted_at` | TIMESTAMPTZ | Soft delete |
+
+DB constraint enforces that `monthly_amount` is set for monthly workers and `hourly_rate` for hourly workers.
+
+---
+
+### `clients`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `organization_id` | UUID FK → organizations | ON DELETE CASCADE |
+| `name` | VARCHAR(200) | |
+| `email` | CITEXT | nullable |
+| `phone` | VARCHAR(50) | nullable |
+| `notes` | TEXT | nullable |
+| `deleted_at` | TIMESTAMPTZ | Soft delete |
+
+---
+
+### `client_feedback`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `client_id` | UUID FK → clients | ON DELETE CASCADE |
+| `job_id` | UUID FK → jobs | ON DELETE CASCADE |
+| `rating` | SMALLINT | 1–5; nullable |
+| `comment` | TEXT | nullable |
+| `submitted_at` | TIMESTAMPTZ | |
+
+---
+
+### `job_templates`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `name` | VARCHAR(200) | |
+| `description` | TEXT | nullable |
+| `industry` | VARCHAR(50) | nullable — NULL = available to all verticals |
+| `is_active` | BOOLEAN | FALSE hides from template picker |
+
+---
+
+### `jobs`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `organization_id` | UUID FK → organizations | ON DELETE CASCADE |
+| `client_id` | UUID FK → clients | nullable, ON DELETE SET NULL |
+| `template_id` | UUID FK → job_templates | nullable, ON DELETE SET NULL |
+| `title` | VARCHAR(200) | |
+| `status` | VARCHAR(20) | `pending` \| `in_progress` \| `done` |
+| `deleted_at` | TIMESTAMPTZ | Soft delete |
+
+---
+
+### `job_days`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `job_id` | UUID FK → jobs | ON DELETE CASCADE |
+| `date` | DATE | |
+| `invoiced` | BOOLEAN | TRUE once an invoice covers this date — blocks or flags further edits |
+
+Unique constraint: `(job_id, date)` — one row per job per calendar day.
+
+---
+
+### `day_assignments`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `job_day_id` | UUID FK → job_days | ON DELETE CASCADE |
+| `worker_id` | UUID FK → workers | ON DELETE RESTRICT |
+| `hours` | DECIMAL(5,2) | Always logged regardless of `pay_type`. Used for both analytics and invoice calc. |
+| `edited_at` | TIMESTAMPTZ | nullable — set on any retroactive edit after initial creation |
+| `edited_by` | UUID FK → users | nullable, ON DELETE SET NULL |
+
+Unique constraint: `(job_day_id, worker_id)` — one assignment per worker per day per job.
+
+Copy/paste: Riverpod holds a "clipboard" of copied assignment(s) (full day or single worker). Pasted hours are editable. Implementation is app-side state only — no schema change needed.
+
+---
+
+### `expenses`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `organization_id` | UUID FK → organizations | ON DELETE CASCADE |
+| `category` | VARCHAR(50) | `hospital` \| `tax` \| `electricity` \| `rent` \| `fuel` \| `transportation` \| `other` |
+| `amount` | DECIMAL(10,2) | |
+| `date` | DATE | |
+| `recurring` | BOOLEAN | |
+| `notes` | TEXT | nullable |
+| `linked_worker_id` | UUID FK → workers | nullable — ON DELETE SET NULL |
+| `linked_job_id` | UUID FK → jobs | nullable — ON DELETE SET NULL |
+
+Both `linked_worker_id` and `linked_job_id` are nullable. An expense can be linked to a worker, a job, both, or neither (pure org-level overhead).
+
+---
+
+### `upcoming_bills`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `organization_id` | UUID FK → organizations | ON DELETE CASCADE |
+| `title` | VARCHAR(200) | |
+| `amount` | DECIMAL(10,2) | |
+| `due_date` | DATE | |
+| `reminder_days_before` | INT | Reminder fires this many days before `due_date` (default 7) |
+| `is_paid` | BOOLEAN | |
+| `proof_asset_id` | UUID FK → assets | nullable — attached image/receipt |
+| `linked_worker_id` | UUID FK → workers | nullable |
+| `linked_job_id` | UUID FK → jobs | nullable |
+| `converted_expense_id` | UUID FK → expenses | nullable — populated once a paid bill is converted to an expense |
+
+Partial index on `(due_date) WHERE is_paid = FALSE` for efficient reminder scheduler queries.
+
+---
+
+### `invoices`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `organization_id` | UUID FK → organizations | ON DELETE CASCADE |
+| `client_id` | UUID FK → clients | nullable, ON DELETE SET NULL |
+| `period_start` | DATE | |
+| `period_end` | DATE | |
+| `total_hours` | DECIMAL(8,2) | |
+| `total_amount` | DECIMAL(10,2) | Gross amount owed for the period |
+| `amount_paid` | DECIMAL(10,2) | |
+| `amount_owed` | DECIMAL(10,2) | **Computed column:** `total_amount - amount_paid` |
+| `pdf_asset_id` | UUID FK → assets | nullable — NULL until PDF is built |
+| `sent_at` | TIMESTAMPTZ | nullable — NULL until invoice email dispatched to manager |
+
+---
+
+### `invoice_line_items`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `invoice_id` | UUID FK → invoices | ON DELETE CASCADE |
+| `worker_id` | UUID FK → workers | nullable, ON DELETE SET NULL |
+| `job_id` | UUID FK → jobs | nullable, ON DELETE SET NULL |
+| `description` | TEXT | |
+| `hours` | DECIMAL(8,2) | nullable |
+| `rate` | DECIMAL(10,2) | nullable |
+| `amount` | DECIMAL(10,2) | |
+
+One row per worker/job breakdown. Makes PDF generation and future analytics queries straightforward.
+
+---
+
+### `bio_pages`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `organization_id` | UUID FK → organizations | UNIQUE — one bio page per org. ON DELETE CASCADE. |
+| `slug` | VARCHAR(100) UNIQUE | Public URL: `mybiopage.com/<slug>` |
+| `title` | VARCHAR(200) | nullable |
+| `short_bio` | TEXT | nullable |
+| `color_preset` | VARCHAR(50) | Key into a curated preset list — users pick a preset, not raw hex |
+| `logo_asset_id` | UUID FK → assets | nullable |
+| `rendered_html` | TEXT | **Static snapshot.** Regenerated on every save, served on every public visit — no live render per visit. Keeps per-visit cost near-zero at scale. |
+| `last_rendered_at` | TIMESTAMPTZ | nullable — when the snapshot was last rebuilt |
+| `is_published` | BOOLEAN | FALSE = draft, not publicly accessible |
+
+---
+
+### `bio_page_buttons`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `bio_page_id` | UUID FK → bio_pages | ON DELETE CASCADE |
+| `label` | VARCHAR(100) | |
+| `url` | TEXT | |
+| `button_type` | VARCHAR(20) | `call` \| `link` \| `social` |
+| `sort_order` | SMALLINT | Controls display order |
+
+---
+
+### `referral_codes`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `organization_id` | UUID FK → organizations | UNIQUE — one code per org. ON DELETE CASCADE. |
+| `code` | VARCHAR(50) UNIQUE | Auto-generated: first name + unique number, e.g. `SARA4821`. Guaranteed unique at DB level. |
+| `discount_pct` | SMALLINT | Discount given to the new user who signs up with this code (default 10%) |
+
+---
+
+### `referral_uses`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | UUID PK | |
+| `referral_code_id` | UUID FK → referral_codes | ON DELETE RESTRICT |
+| `referred_organization_id` | UUID FK → organizations | UNIQUE — a code can only be used once per new org |
+| `discount_applied_pct` | SMALLINT | Snapshot of the discount at time of use |
+| `reward_type` | VARCHAR(50) | nullable — `gift_card` \| `account_credit` \| … TBD |
+| `reward_value` | DECIMAL(10,2) | nullable |
+| `reward_issued_at` | TIMESTAMPTZ | nullable — NULL until reward is sent to the referring org |
+| `used_at` | TIMESTAMPTZ | |
+
+---
+
+### Indexes
+
+**Core lookup indexes**
+
+| Index | Table | Column(s) |
+|-------|-------|-----------|
+| `idx_organizations_owner` | organizations | owner_user_id |
+| `idx_organizations_plan` | organizations | plan_id |
+| `idx_subscribed_services_org` | subscribed_services | organization_id |
+| `idx_subscribed_services_ext` | subscribed_services | external_subscription_id |
+| `idx_workers_org` | workers | organization_id |
+| `idx_clients_org` | clients | organization_id |
+| `idx_jobs_org` | jobs | organization_id |
+| `idx_jobs_client` | jobs | client_id |
+| `idx_job_days_job` | job_days | job_id |
+| `idx_job_days_date` | job_days | date |
+| `idx_day_assignments_day` | day_assignments | job_day_id |
+| `idx_day_assignments_worker` | day_assignments | worker_id |
+| `idx_expenses_org` | expenses | organization_id |
+| `idx_expenses_worker` | expenses | linked_worker_id |
+| `idx_expenses_job` | expenses | linked_job_id |
+| `idx_upcoming_bills_org` | upcoming_bills | organization_id |
+| `idx_upcoming_bills_due` | upcoming_bills | due_date WHERE is_paid = FALSE |
+| `idx_invoices_org` | invoices | organization_id |
+| `idx_invoices_period` | invoices | organization_id, period_start, period_end |
+| `idx_invoice_line_items` | invoice_line_items | invoice_id |
+| `idx_bio_pages_slug` | bio_pages | slug |
+| `idx_assets_owner` | assets | owner_type, owner_id |
+| `idx_referral_codes_code` | referral_codes | code |
+
+**Soft-delete partial indexes** (only scan non-deleted rows)
+
+| Index | Table |
+|-------|-------|
+| `idx_organizations_active` | organizations WHERE deleted_at IS NULL |
+| `idx_workers_active` | workers WHERE deleted_at IS NULL |
+| `idx_clients_active` | clients WHERE deleted_at IS NULL |
+| `idx_jobs_active` | jobs WHERE deleted_at IS NULL |
+
+---
+
+### API / hydration pattern
+
+One API request returns a full JSON snapshot of a job's days + assignments to hydrate Riverpod state in the app. Edits happen locally; a single Save button sends the changed snapshot back in one request, and the backend upserts it into the normalized tables.
+
+Historical access window is enforced as a query filter (`WHERE date >= NOW() - INTERVAL '{history_months} months'`) gated by `plans.history_months` — not a separate storage format. Older data can be archived to cheaper storage after the window closes and restored if the org upgrades.
+
+---
+
+*This document reflects the state of planning as of the current conversation. Treat Sections 1–14 as settled decisions unless explicitly revisited; Section 13 is the active backlog.*
