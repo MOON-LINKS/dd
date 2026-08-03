@@ -61,6 +61,11 @@ All verticals must be fully built and text-ready **before the system goes live**
   - Manager logs external costs not tied to worker billing: hospital bills, government taxes, electricity, rent, fuel/transportation, etc.
   - Each expense: `category`, `amount`, `date`, `recurring` (yes/no)
   - **Optionally linked** to a specific worker and/or a specific job (nullable foreign keys) — supports future job-cost/margin analysis without forcing every expense into a job
+- **Upcoming Bills** (new — distinct from Expenses and from Billing & Invoices)
+  - Represents money the **organization owes out** with a due date — NOT an already-paid expense, and NOT an invoice the org sends to a client
+  - Manager adds a bill with an attached image/proof, a due date, and it auto-sends a reminder a set number of days before due (e.g. bill due Aug 10 → reminder sent Aug 1)
+  - Marked paid/unpaid; once paid, can optionally convert into or link to an Expense record
+  - Optionally linkable to a worker and/or job, same pattern as Expenses
 - **Billing & Invoices**
   - Auto-generated monthly invoice per client/job
   - Full documented breakdown: hours worked, rate, amount paid, amount owed, revenue, and anything else added/paid/received
@@ -214,6 +219,84 @@ This is the core operational logic of the app.
 - The Bio Page (Section 3) is intended to double as a distribution channel: every organization's public page is effectively free marketing exposure for the platform.
 - Referral coupon system (Section 3) is the other planned organic growth lever.
 - Platform/API dependency risk was deliberately avoided in this product: unlike an earlier concept involving Instagram/Facebook/TikTok/X/LinkedIn DM integration (which hit real walls — Meta App Review + business verification, TikTok having no public DM API, LinkedIn DM access being partner-gated, X DM API being expensive at scale, and the developer's own Lebanon-based Meta business verification being rejected), this workforce/billing SaaS has **no external platform gatekeeper** — it's entirely the developer's own data and Stripe/Tap/Apple billing, which have much broader country support than Stripe Connect-style payouts would.
+
+---
+
+## 14. Database Schema (Consolidated So Far)
+
+### `plans`
+- `plan_id` (PK)
+- `name`
+- `max_workers`, `modules` (JSON list, or a separate `plan_features` join table)
+- `stripe_price_id_monthly`, `stripe_price_id_yearly`
+- `tap_plan_id`
+- `apple_product_id_monthly`, `apple_product_id_yearly`
+
+### `subscribed_services` (the entitlement / source-of-truth table)
+- `id` (PK)
+- `user_id` (FK → users)
+- `plan_id` (FK → plans)
+- `payment_provider` (stripe / tap / apple)
+- `external_subscription_id` (Stripe subscription ID / Apple original transaction ID / Tap subscription ID — lets incoming webhooks find the right row)
+- `since` (start date)
+- `updated_at`
+- `price` / `total_price` (increments by value subscribed over time)
+- `is_cancelled` (bool — set true to stop renewal once current period ends)
+- `is_active` (bool — this is the ONLY field the rest of the app checks for feature gating; never a live call to Stripe/Tap/Apple at request time)
+
+### `assets`
+- `id` (PK)
+- `owner_type` / `owner_id` (organization, worker, job, bio page, etc.)
+- `filename` (relative only, e.g. `logo.svg` — CDN base URL `cdn.mydomain.com/imgs/` prefixed in code, never stored in DB)
+
+### `users`
+- Standard auth fields + OTP verification status
+- Account deletion requires re-entering password + email as confirmation
+
+### `workers`
+- `id` (PK), `organization_id` (FK)
+- `name`, `profile_image` (→ `assets`), `id_document` (optional, → `assets`)
+- `pay_type` (`monthly` / `hourly`)
+- `monthly_amount` (used if `pay_type = monthly`)
+- `hourly_rate` (used if `pay_type = hourly`)
+- Note: `hours_logged` (via `day_assignments` below) is tracked regardless of `pay_type` — always feeds analytics/job-costing; `amount_owed` is calculated differently depending on `pay_type`, kept as a separate concern from raw hours
+
+### `jobs`
+- `id` (PK), `organization_id` (FK), `client_id` (FK)
+- `template_id` (built-in templates only in v1, not user-created)
+- `status` (pending / in progress / done)
+
+### `job_days`
+- `id` (PK), `job_id` (FK), `date`
+- `invoiced` (bool — true once an invoice covering this date has been generated; blocks or flags further edits)
+
+### `day_assignments`
+- `id` (PK), `job_day_id` (FK), `worker_id` (FK)
+- `hours` (editable; supports copy-paste from a prior day, including the hour value, then adjustable)
+- `edited_at`, `edited_by` (audit trail for retroactive edits)
+
+### `expenses`
+- `id` (PK), `organization_id` (FK)
+- `category`, `amount`, `date`, `recurring` (bool)
+- `linked_worker_id` (nullable FK), `linked_job_id` (nullable FK)
+
+### `upcoming_bills`
+- `id` (PK), `organization_id` (FK)
+- `amount`, `due_date`, `attached_image` (→ `assets`)
+- `is_paid` (bool)
+- `reminder_days_before` (e.g. 9 → reminder fires Aug 1 for an Aug 10 due date)
+- `linked_worker_id` (nullable FK), `linked_job_id` (nullable FK)
+- `converted_expense_id` (nullable FK → `expenses`, set once paid and converted/linked)
+
+### `invoices`
+- `id` (PK), `organization_id` (FK), `client_id` (FK)
+- `period_start`, `period_end`
+- Full breakdown fields: hours, rate/amount, paid, owed, revenue (generated via the PDF builder)
+
+### Loading/storage pattern for Workers/Jobs/Days
+- Tables above are the real source of truth (normalized, queryable for invoicing, per-day invoice-locking, and future analytics/AI).
+- At the API layer: one request returns a full JSON snapshot (a job's days + assignments) to hydrate Riverpod state in the app. Edits happen locally; a single Save button sends the changed snapshot back in one request, and the backend upserts it into these normalized tables.
+- Historical access window (12 months back at launch, 3 years as a future plan tier) is enforced as a query filter (`WHERE date >= NOW() - X months`) gated by plan — not a separate storage format. Older data can be archived to cheaper storage after the window closes and restored if the org upgrades.
 
 ---
 
