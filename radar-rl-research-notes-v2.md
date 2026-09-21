@@ -474,3 +474,8 @@ Broader/citation coverage: `cross-eye jamming multi-radar triangulation defense`
 - [ ] Decide target publication venue/deadline
 - [ ] If proceeding to code: consider scoping a v1 module structure for Claude Code
 - [ ] Decide CTDE update cadence (how often pooled training updates get pushed to each radar's policy) once multi-radar scope is reached
+- [ ] **Read Mitchell et al. 2018 in full** (FIM-based cost functions, cognitive multi-function radar) — the single most important unresolved check before finalizing the FIM-as-reward/anomaly-signal contribution claim
+- [ ] Get the full title/citation for the second fusion paper checked this session (attention+LSTM, "uncertainty weighting mechanism," MAE comparison vs. Kalman filter) — currently only have the abstract on record
+- [ ] Run the self-verification search query list (Section 15) directly on Google Scholar and IEEE Xplore, ideally with university library access, to catch paywalled papers this conversation's web search couldn't reach
+- [ ] Confirm with professor whether "Dec-POSMDP" has prior art specifically in radar/EW (open web search found none, but this is exactly the kind of claim that needs an expert or closed-database check, not just search)
+- [ ] Once v1 code exists: design the specific held-out/unseen-jamming-mode experiment needed to empirically demonstrate the zero-day/anomaly-detection claim (currently an architectural argument, not yet a demonstrated result)
