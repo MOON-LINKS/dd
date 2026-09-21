@@ -468,6 +468,34 @@ Broader/citation coverage: `cross-eye jamming multi-radar triangulation defense`
 
 ---
 
+## 16. VAML (Value-Aware Model Learning) — a refinement for how the world model itself is trained
+
+**Source**: Farahmand, Barreto & Nikovski (2017), with an "Iterative VAML" follow-up (Farahmand, 2018). A real, established MBRL concept — not specific to radar, but directly applicable to this project's world model.
+
+**Core idea**: standard world-model training optimizes the model to predict the environment accurately *everywhere* (maximum-likelihood reconstruction of every observation detail). VAML argues this is the wrong target — what actually matters is whether the model is accurate specifically **where it affects the decision/value the policy cares about**. A model can be slightly wrong about many irrelevant details and still yield great decisions, or be accurate on paper and still mislead the policy if its errors happen to fall exactly where reward/value is sensitive.
+
+**Application to this project**: the GRU-based CTMC/MMPP world model doesn't need to perfectly reconstruct every nuance of jammer behavior. What matters is that it's accurate specifically where it affects **predicted FIM**, since that's what feeds the reward. A VAML-style training objective — optimizing the GRU to be accurate on "does this affect my FIM prediction" rather than "does this match the raw observation everywhere" — is a more targeted, sample-efficient training approach, and a legitimate, citable refinement for the methodology section (training loss = value-aware, not pure maximum-likelihood reconstruction).
+
+---
+
+## 17. Future Extension: Multi-Device / Multi-Jammer Scenarios
+
+A real, significant extension beyond the current scope (v1: single radar/single jammer; the multi-radar/CTDE design so far: multiple radars, still **one** jammer). Explicitly scoped here as future work, not part of the current architecture — attempting to build this into v1 or v2 would meaningfully slow down getting the core, defensible contributions working and published first.
+
+**What changes with multiple simultaneous jammers:**
+
+1. **World model needs multiple simultaneous processes, not one.** Either N independent CTMC-MMPP processes running in parallel (one per jammer), or a single joint state space covering all combinations — which grows expensive quickly (combinatorial state growth).
+
+2. **The GRU's single hidden state isn't naturally built for tracking multiple separate things at once.** A single compressed state vector suits "what is the one jammer doing." Tracking several jammers simultaneously is closer to a **multi-target tracking problem**. This is exactly where the Tao et al. fusion paper (Section 15) becomes directly relevant again — it uses **LMB (Labeled Multi-Bernoulli)**, a framework specifically built for tracking an uncertain, changing number of targets. Combining the GRU belief-estimator idea with an LMB-style multi-object structure is the natural extension path.
+
+3. **FIM/SINR computation needs to account for combined interference.** With multiple jammers, the interference term in the FIM formula becomes an aggregate — the combined effect of all active jammers on the receiver, not one clean source (sum of interference powers, weighted by each jammer's frequency/geometric overlap with the chosen waveform).
+
+4. **The fusion/triangulation layer needs data association.** With one jammer, "which ray belongs to which fake target" isn't a question. With multiple jammers, the fusion layer must first determine which radar's report corresponds to which jammer before it can check consistency — a classic, nontrivial multi-target association problem (again, LMB-adjacent).
+
+**Recommended sequencing**: v1 (single radar, single jammer) → v2 (multi-radar CTDE + fusion, still single jammer — the scope this conversation has designed in depth) → v3 (multi-jammer, LMB-extended). Naming this explicitly as planned future work in the proposal signals forward thinking without overcommitting the initial contribution scope.
+
+---
+
 ## Open items / next steps
 - [ ] Pull full text of the two closest papers (2026 knowledge-aided MBRL; May-2026 DMC-PPG POMDP) before locking the final contribution claim
 - [ ] Define exact v1 scope (single radar, single jammer, FIM-as-reward only) as a precise spec
@@ -479,3 +507,5 @@ Broader/citation coverage: `cross-eye jamming multi-radar triangulation defense`
 - [ ] Run the self-verification search query list (Section 15) directly on Google Scholar and IEEE Xplore, ideally with university library access, to catch paywalled papers this conversation's web search couldn't reach
 - [ ] Confirm with professor whether "Dec-POSMDP" has prior art specifically in radar/EW (open web search found none, but this is exactly the kind of claim that needs an expert or closed-database check, not just search)
 - [ ] Once v1 code exists: design the specific held-out/unseen-jamming-mode experiment needed to empirically demonstrate the zero-day/anomaly-detection claim (currently an architectural argument, not yet a demonstrated result)
+- [ ] If adopting VAML-style training: define the exact value-aware loss function for the GRU world model (Farahmand 2017/2018 as the starting reference)
+- [ ] Multi-jammer extension (v3, future work): investigate combining the GRU belief estimator with an LMB (Labeled Multi-Bernoulli) multi-target framework, per Tao et al. 2026
