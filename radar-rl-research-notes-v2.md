@@ -480,19 +480,69 @@ Broader/citation coverage: `cross-eye jamming multi-radar triangulation defense`
 
 ## 17. Future Extension: Multi-Device / Multi-Jammer Scenarios
 
-A real, significant extension beyond the current scope (v1: single radar/single jammer; the multi-radar/CTDE design so far: multiple radars, still **one** jammer). Explicitly scoped here as future work, not part of the current architecture — attempting to build this into v1 or v2 would meaningfully slow down getting the core, defensible contributions working and published first.
+A real, significant extension beyond the current scope (v1: single radar/single jammer; v2: multiple radars, still **one** jammer). Explicitly scoped here as future work (Phase 3), not part of the current architecture — attempting to build this into v1 or v2 would meaningfully slow down getting the core, defensible contributions working and published first.
 
-**What changes with multiple simultaneous jammers:**
+### Why this is a fundamentally different problem, not just "more of the same"
+Single-jammer tracking (v1/v2) always answers "what is the one jammer doing right now" — the GRU's hidden state is built specifically to compress the story of *one* evolving thing. Multi-jammer introduces a question that never existed before: **how many jammers are there right now, and does this new observation belong to one already being tracked, or is it a brand new one?** This is called **data association** in the literature, and it is the actual new problem, not an extension of the belief-estimation problem.
 
-1. **World model needs multiple simultaneous processes, not one.** Either N independent CTMC-MMPP processes running in parallel (one per jammer), or a single joint state space covering all combinations — which grows expensive quickly (combinatorial state growth).
+### The naive approach considered and rejected: fixed joint-state vector
+An intuitive first idea: represent the combined system as one joint state (state_i, state_j, state_k, state_l, state_m), N=5 slots, each jammer assigned a slot, remove a slot when a jammer disappears.
 
-2. **The GRU's single hidden state isn't naturally built for tracking multiple separate things at once.** A single compressed state vector suits "what is the one jammer doing." Tracking several jammers simultaneously is closer to a **multi-target tracking problem**. This is exactly where the Tao et al. fusion paper (Section 15) becomes directly relevant again — it uses **LMB (Labeled Multi-Bernoulli)**, a framework specifically built for tracking an uncertain, changing number of targets. Combining the GRU belief-estimator idea with an LMB-style multi-object structure is the natural extension path.
+**Why this doesn't scale — the curse of dimensionality**: if each jammer has 5 possible modes (idle/spot/sweep/barrage/deceptive), 5 simultaneous jammers gives 5×5×5×5×5 = **3,125 combined states**; a 6th jammer pushes this to ~16,000. Most combinations never occur in practice, so this pays real computational cost for combinations that are physically meaningless.
 
-3. **FIM/SINR computation needs to account for combined interference.** With multiple jammers, the interference term in the FIM formula becomes an aggregate — the combined effect of all active jammers on the receiver, not one clean source (sum of interference powers, weighted by each jammer's frequency/geometric overlap with the chosen waveform).
+**A subtler flaw in the fixed-slot idea**: even deciding *which* slot (i, j, k, l, or m) to update when a new observation arrives, versus opening a new slot — is itself the data-association problem in disguise, not something the fixed-vector approach actually avoids.
 
-4. **The fusion/triangulation layer needs data association.** With one jammer, "which ray belongs to which fake target" isn't a question. With multiple jammers, the fusion layer must first determine which radar's report corresponds to which jammer before it can check consistency — a classic, nontrivial multi-target association problem (again, LMB-adjacent).
+### The correct approach: LMB (Labeled Multi-Bernoulli)
+**Bernoulli** (after Jacob Bernoulli, Swiss mathematician, 1600s–1700s, Basel): the simplest random event — does this thing exist right now, yes/no, with some probability (e.g., "85% likely this jammer-track is still active").
+**Multi-Bernoulli**: a whole collection of these existence-questions running at once, one per currently-tracked jammer.
+**Labeled**: gives each Bernoulli/track a persistent identity, so the system knows "this is still Track #1" over time, rather than losing track of which-is-which every step.
 
-**Recommended sequencing**: v1 (single radar, single jammer) → v2 (multi-radar CTDE + fusion, still single jammer — the scope this conversation has designed in depth) → v3 (multi-jammer, LMB-extended). Naming this explicitly as planned future work in the proposal signals forward thinking without overcommitting the initial contribution scope.
+LMB represents the world as a **changing set of labeled objects**, each with its own individual belief distribution, with the *count* of objects itself treated as uncertain and updated probabilistically — no fixed-size vector, no combinatorial explosion. A track's existence-probability decays over time if no new matching observations arrive, and is dropped once low enough (soft, probabilistic removal, not a hard on/off switch).
+
+**LMB is a mature field, not something to claim as novel on its own.** It dates to at least 2014, with extensive development since (GLMB, δ-GLMB, distributed/multi-sensor LMB, and even a 2014-era paper on using LMB output to drive **sensor control decisions** via a task-driven cost function — Gostar, Hoseinnezhad & Bab-Hadiashar). LMB itself, and even "LMB-guided sensor control," are well-trodden ground.
+
+**Where the actual, still-open gap sits**: a targeted search for "LMB + RL + multi-jammer" and "LMB applied to radar/jamming specifically" returned no hits — narrower and more specific than the mature general LMB field, and worth treating as tentatively open rather than confirmed, since this field (defense-adjacent multi-sensor tracking) publishes heavily in paywalled IEEE/military-affiliated venues this conversation's search cannot fully see.
+
+### Corrected architecture — what changes vs. what stays the same
+**Nothing about the existing pipeline (GRU, FIM computation, predicted-vs-actual comparison, PPO training loop) gets replaced.** LMB is a new layer added *above* it, not a substitute for it:
+- **LMB (new, the "dispatcher")**: decides how many jammer-tracks currently exist, routes each new observation to the correct existing track or opens/closes tracks as needed.
+- **One GRU instance per currently-active track (unchanged design, just run multiple times)**: each active track gets its own independently-running belief estimate, using the *exact same trained GRU weights* — one shared skill, applied once per active jammer, not separately-trained brains. (Real-time analogy: several workers sharing one identical instruction manual, each independently assigned to their own task by a supervisor — LMB is the supervisor.)
+- **FIM/SINR computation (extended)**: interference becomes an aggregate — the combined effect of all active jammers on the receiver (sum of interference powers, weighted by each jammer's frequency/geometric overlap with the chosen waveform), rather than one clean source.
+- **The fusion/triangulation layer (extended)**: with multiple jammers, "which ray belongs to which fake target" requires data association before consistency-checking can even begin — again LMB-adjacent.
+- **The policy (extended, not replaced)**: still one shared PPO-trained policy, still outputs one waveform decision — but now takes in the *combined* beliefs from however many tracks are currently active (a variable-size input), rather than one single belief vector.
+
+**Recommended sequencing**: v1 (single radar, single jammer) → v2 (multi-radar CTDE + fusion, still single jammer) → v3 (multi-jammer, LMB-extended). Naming this explicitly as planned future work signals forward thinking without overcommitting the initial contribution scope.
+
+---
+
+## 18. Diagnostic Matrix: SINR−SNR Gap × FIM Match/Mismatch
+
+A key distinction reached this session, worth keeping as a standalone reference: **SINR−SNR measures how much interference is present (volume). Predicted-vs-actual FIM match measures whether the current belief was accurate (surprise). These are independent readings**, not the same measurement, and combining them produces a genuinely useful 2×2 diagnostic:
+
+| | **FIM predicted ≈ actual (correct)** | **FIM predicted ≠ actual (mismatch)** |
+|---|---|---|
+| **SINR−SNR gap LOW** (little/no jamming) | Normal, quiet, expected conditions — healthy baseline state | **DRFM signature.** DRFM replays a clean copy of the radar's own signal — it does not create noisy interference, so SINR−SNR stays low ("looks safe"), but because it's fake, FIM mismatches anyway. Low noise + FIM surprise is the hardest-to-catch, most dangerous combination — exactly what a stealthy deception attack produces. |
+| **SINR−SNR gap HIGH** (heavy jamming) | Known, familiar jamming — loud, but a type the model has learned and correctly anticipated | Ambiguous on its own: could be a **genuinely novel jamming technique** (real interference, unfamiliar pattern, no deception involved), or **DRFM layered on top of real heavy jamming** (a hybrid attack). The single-radar mechanism cannot distinguish which — see resolution below. |
+
+**Honest limitation of this mechanism alone**: it is an **anomaly flag, not a diagnosis** — it correctly signals "something doesn't match what I expected" but cannot by itself determine *why*. This is actually consistent with the anomaly-detection-not-classification framing (Section 8) — forcing it to also classify the cause would reintroduce the structural weakness of classification-based approaches against genuinely novel threats.
+
+**How multi-radar fusion resolves the ambiguity (the high-SINR-gap/mismatch cell specifically)**: adds an independent second question on top of the single-radar check — "do other radars, from different positions, corroborate that a real target exists here at all?"
+- Anomaly flagged **and** other radars don't corroborate the target → points toward **DRFM/deception** (a fake, single-source-replayed target has no reason to appear consistently from a second radar's different vantage point).
+- Anomaly flagged **but** all radars consistently agree on the same real target, just harder to estimate precisely → points toward **genuinely novel real jamming**, not deception (a real physical phenomenon affects the shared physical reality all radars observe, so it appears consistently across all of them).
+
+**Remaining caveat, even with multi-radar**: this assumes an ordinary single-source jammer. A sophisticated, expensive multi-channel DRFM device specifically built to feed *consistent* fake signals to multiple radars at once could, in principle, still fool this cross-check — same "raises the cost, doesn't guarantee detection" framing as the general multi-channel DRFM limitation (Section 7).
+
+---
+
+## 19. Contribution Status by Phase — Final Verdict (as of this session)
+
+| Phase | Scope | Verdict |
+|---|---|---|
+| **Phase 1** | Single radar, single jammer. MMPP jammer model, GRU belief estimator, predicted-vs-actual FIM as anomaly/reward signal. | **Strongest, cleanest claim.** MMPP-for-radar-jamming and the FIM-mismatch-as-anomaly-signal mechanism both held up across every literature check run this session, including direct checks against two 2026 multi-radar fusion papers. Recommended: finish and publish this phase first rather than waiting for Phases 2–3. |
+| **Phase 2** | Multiple radars, CTDE, PRI jitter (→ Dec-POSMDP framing), FIM-weighted fusion specifically for DRFM detection. | **Real but narrower than first framed.** CTDE and PRI jitter individually are established, not original. What survives: the specific combination — physics-grounded (not learned/black-box) FIM-weighted fusion, explicitly for deception detection rather than general tracking accuracy — plus the Dec-POSMDP formalization, for which no radar/EW-specific prior art was found. Legitimate systems-integration contribution; must be worded precisely as such, not as "we invented CTDE/PRI jitter." |
+| **Phase 3** | Multi-jammer via LMB extension. | **Most uncertain of the three.** LMB itself, and even LMB-guided sensor control, are mature, well-established (2014+). The narrower claim — LMB combined with a learned RL/MBRL policy, applied specifically to radar jamming/DRFM — returned no hits in open search, but this is exactly the class of claim most likely to have closed-access/paywalled prior art this conversation cannot verify. Treat as genuinely open, not confirmed, pending expert or database-level (IEEE Xplore) check. |
+
+**Overall recommendation**: real, publishable contribution exists — but confidence decreases with each phase, exactly as expected (the further the scope extends, the harder any single search pass can fully verify). Don't gate Phase 1 behind finishing Phases 2–3.
 
 ---
 
@@ -509,3 +559,5 @@ A real, significant extension beyond the current scope (v1: single radar/single 
 - [ ] Once v1 code exists: design the specific held-out/unseen-jamming-mode experiment needed to empirically demonstrate the zero-day/anomaly-detection claim (currently an architectural argument, not yet a demonstrated result)
 - [ ] If adopting VAML-style training: define the exact value-aware loss function for the GRU world model (Farahmand 2017/2018 as the starting reference)
 - [ ] Multi-jammer extension (v3, future work): investigate combining the GRU belief estimator with an LMB (Labeled Multi-Bernoulli) multi-target framework, per Tao et al. 2026
+- [ ] Search IEEE Xplore directly (not just open web) for "LMB + RL + jamming" and "LMB + radar anti-jamming" — the one Phase 3 gap open search couldn't rule out
+- [ ] If Phase 2 pursued: design the exact aggregation function for how the policy combines a *variable number* of active jammer-track beliefs into one fixed action decision (multi-jammer case)
