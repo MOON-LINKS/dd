@@ -305,3 +305,159 @@ Leave-one-attack-family-out (train with a family hidden, test on it) tests **att
 3. Verify the Zigbee datasets (size, labels, licensing) and run a dedicated 6G dataset search.
 4. Decide Paper 3 direction (twin + XAI vs. Idea F); the title works either way.
 5. Then draft Paper 1's formal problem definition: observation model, action space, reward.
+
+---
+---
+
+# UPDATE 2 — 28 Sep 2026 (new section only; everything above is unchanged)
+
+---
+
+## Potential New Idea to Be Used in Paper 2: Identity-Uncertain Multi-Object Belief (RFS / LMB) for Fleet Defense
+
+**Status:** candidate, not adopted. It is gated by the go/no-go experiment below. If the experiment fails, fall back to the federated-RL fleet version of Paper 2 (see "Relation to federated learning and CTDE").
+
+### 1. The idea in one paragraph
+
+Instead of assuming every device has a reliable identity and the number of devices is known, the defender maintains a **joint belief over an unknown, changing set of devices**: which devices exist, which identity hypotheses are the same physical device, and how likely each is to be compromised. The belief is a random finite set (RFS), realized as a labeled multi-Bernoulli (LMB) filter. Each entry is (label, existence probability r, state density p(x)). The PPO/POMDP agent from Paper 1 consumes this multi-object belief instead of a single network-health belief.
+
+### 2. The problem it targets (problem first, tool second)
+
+**Problem:** IoT defense pipelines mostly resolve device identity first (MAC, IP, fingerprint) and then run detection on the resulting per-device streams. When identity is wrong or ambiguous, the errors flow silently into the detector, and nothing tracks how many devices there are, which are which, and which are compromised.
+
+**Evidence gathered so far (narrow search; verify before relying on it):**
+- MAC randomization can prevent an IoT device from being identified properly, which an IETF use-case document says may lead to quarantine and disrupted operations.
+- MAC spoofing works because two devices sharing one MAC are treated as legitimate clients.
+- Vendor documentation (Cisco DNA Center) notes that a client changing its MAC is treated as a new client, so rogue-client counts depend on how many MACs a device uses. This is a cardinality error.
+- The current fix is de-randomization by fingerprinting, e.g. unsupervised clustering of probe-frame features (a 2026 study clusters 22 devices from six manufacturers). This produces a hard identity guess passed downstream.
+- Devices behind hubs or NAT (e.g. the 38 Zigbee/Z-Wave devices behind 5 hubs in CICIoT2023) appear as aggregated traffic, so measurement-to-device association is genuinely ambiguous.
+
+**Gap (to be confirmed by a dedicated literature sweep):** identity resolution and compromise detection are separate stages; no work found so far maintains a joint probabilistic belief over count, identity and compromise state for IoT defense. Not yet searched: IDS papers that model identity uncertainty explicitly.
+
+### 3. Why an RFS/LMB and why it is not "just a radar tool"
+
+Short answer for a committee:
+> The defender's problem has the structure of multi-object tracking under identity uncertainty: unknown count, births, deaths, false alarms, and ambiguous measurement-to-object association. Current IoT pipelines resolve identity first and detect second, so identification errors corrupt detection. An RFS handles identity and compromise in one Bayesian recursion, and the framework has already moved beyond radar.
+
+Supporting facts:
+- Labeled RFS filters are applied in video tracking, cell lineage tracking, SLAM and space-debris tracking, not only radar.
+- RFS filters natively model birth, death and clutter.
+- Distributed/consensus LMB filters and a secure-fusion variant that detects false-data-injection attacks via KL divergence between LMB densities already exist in the tracking literature.
+- When every measurement carries a unique, trustworthy ID, the standard approach reduces to parallel single-object Bernoulli filters. So the RFS machinery is justified only where identity is ambiguous. This is the central condition tested below.
+
+### 4. Radar-to-IoT mapping
+
+| Tracking concept | IoT-defense meaning |
+|---|---|
+| Object | A physical device that may be compromised |
+| Birth | New infection, or a new/rogue/spoofed device appearing |
+| Death | Recovery, quarantine, or device leaving the network |
+| Clutter | Anomaly-score spikes that are noise, not attacks |
+| Measurement | Anomaly score / traffic statistic (from the GRU residual), possibly aggregated over several devices |
+| Label | Persistent identity hypothesis for a device |
+| Existence probability r | Probability that this device is compromised (or exists, per model choice; define precisely in the formal model) |
+| State density p(x) | E.g. MMPP hidden state or infection stage, tying back to the traffic model |
+| Undiscovered objects | Devices compromised in ways the detector does not recognize (zero-day link) |
+
+### 5. Complexity ladder (stop at any level without wasting work)
+
+1. **Level 0:** single belief with a novelty state (Paper 1).
+2. **Level 1:** one independent Bernoulli belief per device plus fleet aggregation. Simple; probably enough if identities are reliable.
+3. **Level 2:** true RFS/LMB with identity ambiguity, hubs/NAT, spoofed and hidden devices. Only if the go/no-go test shows a real need.
+
+### 6. Relation to federated learning and CTDE
+
+- **Federated learning** decides how knowledge is shared for training (weights, not raw traffic). It can enter Paper 1 as a small extension: federate the GRU world model across simulated networks with a non-IID split.
+- **CTDE** decides how multiple agents coordinate (central critic in training, local action at run time). Paper 2 devices as currently scoped do not interact, so that version is really **federated RL**, and labeling it CTDE invites an attack. Reserve CTDE for Backup A (coordinated cross-device defense).
+- **RFS/LMB** decides what the agent believes. It is orthogonal to both and can be combined with them later.
+- If federation is already in Paper 1, "we federated it" cannot carry Paper 2. This idea (or Backup A) has to.
+
+### 7. Candidate contributions
+
+1. A formulation of IoT fleet defense as a POMDP whose belief is a multi-object RFS with identity uncertainty and an undiscovered-device component.
+2. An **identity-corruption benchmark**: real labeled traffic with known ground-truth device identities, corrupted in controlled steps. Real datasets normally lack this.
+3. Integration of the multi-object belief as the PPO agent's input, with a comparison against identity-first pipelines.
+4. Stretch: belief-level fusion across the fleet (consensus LMB) with robustness to lying/compromised devices, compared with weight-level federated learning.
+
+### 8. Test plan: how to check whether it works
+
+**Principle:** decide the pass/fail criteria before running anything, and allow a negative result. A negative result on Stage 1 is a cheap early exit, not a failure of the thesis.
+
+#### Stage 0: sanity (days)
+- Implement the plain per-device pipeline and verify it reproduces expected detection quality with ground-truth IDs on CICIoT2023.
+- Implement the LMB filter on a toy simulation with known births/deaths to confirm the filter itself behaves (cardinality estimate tracks truth).
+
+#### Stage 1: go/no-go experiment (the kill test)
+**Question:** when identity is corrupted, does a per-device detector degrade badly, and does a joint identity-plus-compromise belief recover the loss?
+
+**Data:** CICIoT2023 (per-device MAC ground truth; hub-mediated Zigbee/Z-Wave devices). Optional cross-check on CICIoMT2024 and other sets with device identifiers.
+
+**Corruption knobs (each varied independently, plus combined):**
+- MAC rotation rate: how often a device's identifier changes.
+- Hub/NAT aggregation size: how many devices are merged into one observed stream.
+- Spoof-duplicate fraction: how many devices share an identifier with another.
+- Hidden/unknown-device fraction: devices that never appear with a usable identifier.
+- Fingerprinting error rate: how often the identity-resolution stage assigns frames to the wrong device (models the imperfect de-randomization step).
+
+**Methods compared:**
+| ID | Method | Role |
+|---|---|---|
+| B0 | Per-device detector with oracle (ground-truth) IDs | Upper bound |
+| B1 | Identity-first: fingerprint/cluster to get hard IDs, then per-device detector | Main baseline (current practice) |
+| B2 | Network-level/aggregate detector ignoring identity | Identity-free baseline |
+| B3 | Independent per-device Bernoulli beliefs on the (possibly wrong) IDs | Tests whether RFS is needed at all |
+| P1 | Joint identity + compromise belief (multi-Bernoulli / LMB) | Proposed |
+
+**Metrics:**
+- Detection quality per true device (AUROC, F1) and time-to-detect.
+- **Cardinality error:** estimated vs true number of compromised devices.
+- Multi-object distance between estimated and true compromised-device sets (the OSPA metric is the standard in the tracking literature; confirm choice).
+- Identity errors: label switches, fragmented/duplicated tracks.
+- False isolation rate of legitimate devices (the operational cost that matters).
+- Compute/latency as fleet size grows.
+
+**Decision rule (set numeric thresholds before running; the fractions below are suggestions only):**
+- **GO** if, at realistic corruption levels, B1 loses a substantial share of B0's performance **and** P1 recovers at least about half of that gap, **and** P1 beats B3 clearly.
+- **DOWNGRADE to Level 1** if B3 matches P1: identity ambiguity is real but the RFS machinery adds nothing over independent per-device beliefs.
+- **NO-GO** if B1 degrades gracefully: the problem is not severe enough to justify a paper. Fall back to federated-RL Paper 2 or Backup A.
+
+#### Stage 2: policy integration (only after GO)
+- In the MMPP/twin environment, train the PPO agent with (a) the multi-object belief as input vs (b) the identity-first belief vs (c) a recurrent-PPO agent with no explicit belief.
+- Measure return, false isolations, containment time, and robustness as corruption increases.
+- Include the Paper 1 ablation logic: explicit belief vs GRU hidden state vs both.
+
+#### Stage 3: fleet fusion (optional stretch)
+- Compare belief-level fusion (consensus LMB) against weight-level federated learning (FedAvg/FedProx) at equal communication budget.
+- Add lying or poisoned devices; test whether KL-divergence-based checks between local beliefs detect and downweight them.
+- Track communication cost, since the argument is that beliefs are smaller than weights.
+
+#### Stage 4: real-data validation
+- Final numbers on held-out real captures the agent never trained on; cross-dataset test (e.g. train on CICIoT2023, test on another source).
+- Keep simulation-derived results labeled as such.
+
+### 9. Threats to validity (state them in the paper)
+
+1. **Synthetic corruption is an assumption.** Reviewers may say the corruption protocol is invented. Mitigation: calibrate knobs to published measurements of randomization behavior and fingerprinting accuracy, and report sensitivity across the whole range.
+2. **Simulator trust** (same category as the earlier MMPP dataset rejection): calibrate against real traces; validate only on real held-out data.
+3. **Scalability:** LMB/GLMB cost grows with the number of hypotheses. Plan gating, pruning and clustering for fleets of hundreds to thousands of devices.
+4. **Model mismatch:** compromise is not a kinematic target. The birth model (infection dynamics) and measurement likelihood (anomaly score) must be justified and validated, not borrowed.
+5. **Possible negative result:** B3 or B1 may be good enough. The plan above treats that as an acceptable outcome.
+
+### 10. Expected reviewer attacks and prepared answers
+
+| Attack | Prepared answer / required evidence |
+|---|---|
+| "This is a radar tool; why here?" | Structure argument in section 3, plus non-radar precedents; and the Stage 1 result showing identity-first pipelines break |
+| "Why not clustering plus a per-device model?" | That is baseline B1; show it degrades and P1 recovers |
+| "Why not independent per-device probabilities?" | That is baseline B3; show P1 beats it, or downgrade honestly |
+| "Corruption is synthetic" | Calibrated knobs, sensitivity sweep, real held-out validation |
+| "Does it scale?" | Fleet-size scaling curves with gating/pruning |
+| "How is this different from Amamou et al.?" | They federate weights of a detector; this fuses beliefs of a decision-making agent under identity uncertainty |
+
+### 11. Open items for this idea
+
+1. Dedicated literature sweep: "identity uncertainty" / "device identification errors" combined with IDS, RL defense, and multi-object filtering. Add query strings to the search protocol.
+2. Confirm the exact metric choice (OSPA or a variant) and how to define ground truth under aggregation.
+3. Check which datasets expose usable identifiers and hub-aggregated traffic at the granularity needed for the corruption protocol (CICIoT2023 first; others unverified).
+4. Formalize the state, birth/death and measurement models, and decide whether r means "exists" or "compromised" (or a joint mixture).
+5. Prototype Stage 0 and Stage 1 before investing in Stages 2 to 4.
