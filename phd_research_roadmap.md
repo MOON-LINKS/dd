@@ -151,3 +151,157 @@ These three model families answer different questions and can, in principle, be 
 
 - Amamou, R., Ktata, F. B., & Bessaad, F. — *"Agentic AI-Based Multi-agent System for IoT Cyberattack Detection"*, AINA 2026 (Springer LNDECT vol. 301).
 - Li, Y., Xiang, Z., Bastian, N. D., Song, D., & Li, B. — *"IDS-agent: An LLM Agent for Explainable Intrusion Detection in IoT Networks"*, 2025 (OpenReview).
+
+---
+---
+
+# UPDATE — 28 Sep 2026 (new sections only; everything above is unchanged)
+
+---
+
+## Proposed PhD Title
+
+**Toward Autonomous, Zero-Day-Aware IoT Security: Belief-Driven Reinforcement Learning from Single Networks to Federated Fleets**
+
+**Why this title (Title 2 of three considered):**
+- Compact, and works with either version of Paper 3 (twin + XAI, or Idea F self-play), so that slot can stay open.
+- "Autonomous" and "belief-driven" are used instead of "agentic" in the title, because "agentic" now collides with the LLM-agent literature (including Amamou et al.). Reserve "agentic" for framing text.
+- "From Single Networks to Federated Fleets" maps directly onto Paper 1 (single network) and Paper 2 (fleet).
+
+**Thesis story (one sentence):**
+> This thesis develops an autonomous defense agent for IoT networks that treats zero-day detection as inference under partial observability, and then scales that agent across a vendor's device fleet without centralizing raw traffic.
+
+**Terms to define precisely (committee-proofing):**
+- **"Detecting" undersells the work.** Detection is what RAIDEN already did. The contribution is *believe and act*: the agent holds a belief about unseen threats, including zero-days, and takes graded responses.
+- **"Self-learning"** = policy improvement from interaction (PPO) plus fleet-level knowledge sharing (Paper 2). It does not mean fully unsupervised. If Paper 3 becomes self-play (Idea F), it gains a third meaning: the agent finds its own blind spots.
+- **"Private"** = raw traffic stays on-device. Federated learning alone does not guarantee privacy, since model updates can leak information. Either scope the claim to "raw data stays local" or plan secure aggregation / differential privacy as a bounded add-on.
+
+**Thesis arc:** Believe (Paper 1) -> Scale (Paper 2) -> Harden (Paper 3, open).
+
+---
+
+## Novelty Check: Prior Work on Zero-Day / Novelty Beliefs (first pass, not a systematic review)
+
+**Headline:** the individual pieces exist, but no single paper found combines (1) a belief over hidden states, (2) novelty as an explicit hidden state or calibrated observation, and (3) graded actions, in IoT. This rests on absence of evidence; verify with the search protocol below before wording the Paper 1 contribution.
+
+**Closest neighbours:**
+- **POMDP + PPO for intrusion response.** Hammar & Stadler's group formalizes OT intrusion response as a POMDP with PPO solvers (k-Obs-PPO and BF-PPO, the latter using an approximate belief). Closest methodological precedent to Paper 1. OT setting, no zero-day layer.
+- **POMDP + PPO, adjacent settings.** DeepStage (multi-stage APT defense, belief state, PPO); H-MARL on CAGE-4 (Dec-POMDP, hierarchical MARL; relevant to Backup A).
+- **PPO + zero-day + IoT.** A recent cross-dataset zero-day IDS combines unsupervised anomaly detection, Siamese similarity and a PPO adaptive-defense policy (reported 2.21% false-positive rate). Main threat to a "zero-day + PPO" claim, but it has no belief state.
+- **Anomaly-guided RL.** DeepEdgeIDS (label-free autoencoder DQN at IoT edge gateways); DQN-IDS (softmax uncertainty features + RL for open-set detection; novelty is a feature, not a state); CyDER 2.0 (RL + anomaly detection, defender's problem framed as a POMDP).
+- **Federated + zero-day.** IDAC (federated sharing of autonomously labeled attack candidates); Jogunola et al. (federated zero-day botnet detection). Both federate detection, not a decision-making policy. Amamou et al. (AINA 2026) remains the main Paper 2 overlap.
+- **Optimal stopping precedent (Idea H).** Stadler/Hammar's "Intrusion prevention through optimal stopping" (TNSM) already exists; seen as a reference only, needs a full read.
+
+**Proposed differentiator:** novelty gets its own probability in the belief (an "unknown attack" latent state), and graded actions (throttle, then isolate) follow from it. Fed policies (Paper 2) share a belief-driven agent, not just a detector.
+
+---
+
+## Closest-Ten Comparison Table
+
+"?" = only an abstract or snippet was seen; confirm from the full text before relying on the row.
+
+| Paper | Belief / POMDP | Novelty modeled | PPO | Gap versus this thesis |
+|---|---|---|---|---|
+| Hammar & Stadler, OT intrusion response | Yes | No | Yes | Closest method to Paper 1; OT domain, no zero-day layer |
+| Zhu et al., POMDP dynamic defense of large-scale networks | Yes | No | No | Classical online belief planning; older, not learning-based |
+| DeepStage (APT defense) | Yes | No | Yes | Enterprise APTs, not IoT traffic |
+| H-MARL on CAGE-4 | Yes | No | ? | Dec-POMDP hierarchical MARL; reference for Backup A |
+| Siamese + PPO zero-day IDS | No | Yes (anomaly) | Yes | Main "zero-day + PPO" threat; no belief state |
+| DeepEdgeIDS (Green DRL) | No | Yes (anomaly) | No (DQN) | Anomaly-guided DQN at IoT edge |
+| DQN-IDS | No | Yes | No (DQN) | Uncertainty as a feature, not a state |
+| CyDER 2.0 | Yes (framing) | ? | ? | Read full text: how do belief and novelty interact? |
+| IDAC | No | Yes | No | Federates detection, not policy |
+| Amamou et al., AINA 2026 | ? | ? | ? | From this roadmap; not re-verified; Paper 2 overlap |
+
+**Open-set baselines to cite in evaluation:** MI2DAS (multi-layer IIoT IDS with open-set recognition and incremental learning); Jahangir et al., "An Adaptable Deep Learning-Based IDS to Zero-Day Attacks" (rejecting held-out labels as unknown).
+
+**Read first:** Hammar & Stadler (OT), CyDER 2.0, DQN-IDS.
+
+**Decision rule:** score each paper on (1) belief over hidden states, (2) explicit novelty state or calibrated novelty observation, (3) graded actions. All three = reframe the contribution. Two = differentiate on the third.
+
+---
+
+## Literature Search Protocol
+
+**Concept blocks** (OR within a block, AND across blocks):
+- **A, decision framework:** "POMDP", "partially observable", "belief state", "belief update", "Dec-POMDP"
+- **B, learning method:** "reinforcement learning", "PPO", "model-based RL", "world model"
+- **C, novelty:** "zero-day", "unknown attack", "novel attack", "open-set", "novelty detection", "out-of-distribution"
+- **D, domain:** IoT, IIoT, "smart home", edge
+- **E, fleet:** federated, CTDE, "centralized training decentralized execution", fleet
+
+**Priority queries (most to least dangerous to the novelty claim):**
+1. A AND C AND D (belief and novelty in IoT)
+2. A AND B AND C (POMDP-RL with novelty, any domain)
+3. C AND "hidden state" AND ("unknown class" OR "novelty state")
+4. B AND C AND D AND E (Paper 2 overlap)
+5. "Markov modulated Poisson" AND (botnet OR malware OR intrusion) (RAIDEN-specific)
+6. ("GRU" OR "recurrent") AND ("world model" OR "model-based") AND "cyber defense"
+
+**Sources:** IEEE Xplore, ACM DL, Scopus, arXiv, Semantic Scholar, Google Scholar. Venues to prioritize: NDSS (and its IoT workshops), IEEE TIFS, TNSM, IoT-J, Computers & Security, CAGE/CybORG literature. Weight 2025-2026 preprints heavily.
+
+**Inclusion:** sequential decision-making or RL for defense under partial observability or uncertainty; explicit handling of unknown/novel attacks; network or traffic level.
+**Exclusion:** pure supervised classifiers; LLM-narration-only work; host or exploit-chain simulators unless a POMDP is their core.
+
+**Process:** title/abstract screen, then full text; snowball backward and forward from the closest ten; stop after two consecutive rounds with no new relevant papers; set citation alerts; re-run before every submission.
+
+**Extraction fields:** belief/POMDP, novelty handling, RL algorithm, domain, fleet/federated, action granularity, zero-day evaluation method, datasets.
+
+---
+
+## Feasibility on CICIoT2023 and Design Constraints
+
+**Verdict:** doable for Paper 1, with three things to plan for.
+
+1. **Static data gives no closed loop.** Agent actions (throttle, isolate) do not change recorded traffic, so RL directly on a dataset degenerates toward a contextual bandit. The MMPP/twin must serve as the interactive environment. Datasets are used to *calibrate* the simulator and to *evaluate* on held-out real attacks, not as the training environment.
+2. **Zero-day needs a protocol** (see next section).
+3. **Malware spread is thinly represented.** CICIoT2023 is mostly DoS, DDoS, recon, spoofing and Mirai. Complement with Mirai/botnet-focused sources (N-BaIoT, IoT-23, Bot-IoT) for RAIDEN's spread dynamics.
+
+**CICIoT2023 facts:** 105 devices, 33 attacks in 7 categories including Mirai, raw pcaps plus pre-extracted window features (47 features). 67 devices were directly involved in attacks; 38 Zigbee/Z-Wave devices sit behind 5 hubs, so it is **not** true 802.15.4 radio-layer data.
+
+**For Paper 2:** per-device identifiers allow partitioning traffic by device to emulate a non-IID fleet. True fleet-scale behavior still needs simulation. Edge-IIoTset (built for centralized and federated learning) is a second option.
+
+**Access-technology-agnostic design principle:** have the agent consume flow- and window-level statistics above the access layer (rates, inter-arrival times, fan-out), with the access technology as a context variable. This makes the agent portable across Wi-Fi, Zigbee (via hubs), 5G and later 6G by construction, and enables a cross-technology generalization experiment (train on Wi-Fi/IoT, test on 5G-NIDD).
+
+---
+
+## Dataset Map
+
+"H2H" read as human-type traffic (phones, PCs) as opposed to M2M. Confirm this reading.
+
+| Layer | Dataset | Notes |
+|---|---|---|
+| IoT, multi-device | CICIoT2023 | See above |
+| | CIC IoT 2022 | ~60 devices across 802.11, Zigbee, Z-Wave |
+| | CICIoMT2024 | 18 attacks on 40 medical IoT devices; Wi-Fi, MQTT, Bluetooth |
+| | IoT-23, ToN_IoT, MQTT-IoT-IDS2020, X-IIoTID | Standard IoT/IIoT sets |
+| | Edge-IIoTset | Built for centralized and federated learning; Paper 2 |
+| | N-BaIoT, Bot-IoT | Mirai/Bashlite and botnet traffic |
+| Wi-Fi (L2) | AWID2 / AWID3 | Wireless-specific attacks (deauth, disassociation) |
+| Zigbee / 802.15.4 | ZBDS2023, ZigBeeNet, CRAWDAD cmu/zigbee-smarthome | Cited in the literature; size, labels and access terms NOT yet checked; labeled attack data is scarce |
+| 5G | 5G-NIDD | 1,215,890 labeled flows, real 5G testbed; DoS floods and port scans (tests portability, not 5G-specific threats) |
+| Vehicular | VDoS | UDP flood, SYN flood, Slowloris |
+| H2H / general | CICIDS2017/2018, UNSW-NB15 | Enterprise baselines; already combined in CyDER for RL work |
+| 6G | none found | No dedicated 6G search run yet; unconfirmed |
+
+Note: in this pass N-BaIoT, Bot-IoT and the CICIDS family were confirmed only by name or citation, not by inspecting their pages.
+
+---
+
+## Zero-Day Evaluation Protocol
+
+Leave-one-attack-family-out (train with a family hidden, test on it) tests **attack-class shift**, not true zero-day behavior with temporal novelty and unknown signatures. Use a combination:
+1. **Leave-one-family-out** on CICIoT2023 (baseline, comparable to open-set literature).
+2. **Temporal split** (train on earlier captures, test on later or newly introduced attack behavior).
+3. **Cross-dataset** (train on CICIoT2023, test on another source such as 5G-NIDD, CICIoMT2024, or a held-out Mirai/Bashlite variant).
+4. **Simulator-discovered attacks** (Idea F, if adopted) only as training augmentation, never as the final proof; final evaluation stays on real, held-out, published attack data.
+
+---
+
+## Open Actions From This Update
+
+1. Run the novelty sweep (search protocol above) before fixing the Paper 1 contribution wording.
+2. Read in full: Hammar & Stadler (OT), CyDER 2.0, DQN-IDS, Amamou et al.
+3. Verify the Zigbee datasets (size, labels, licensing) and run a dedicated 6G dataset search.
+4. Decide Paper 3 direction (twin + XAI vs. Idea F); the title works either way.
+5. Then draft Paper 1's formal problem definition: observation model, action space, reward.
