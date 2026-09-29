@@ -689,3 +689,60 @@ Run the cheap identity-first pipeline (B1) in normal operation and switch to the
 ## Colab Notebooks (updated)
 
 - `stage1_go_nogo.ipynb` (new) — self-contained: writes the `stage1/` package, runs the synthetic dry run, a 10-seed heavy-corruption run, and (Section 4) the real-data inspect/load/run cells, which skip cleanly if `DATA_PATH` does not exist.
+
+---
+---
+
+# UPDATE 7 — 29 Sep 2026 (new section only; everything above is unchanged)
+
+## Alternatives to PMB: Literature Scan and Synthetic Comparison
+
+**Status:** exploratory. Six targeted web searches (not a systematic review) plus implementation of the candidate methods in the Stage 1 harness (`stage1_go_nogo.ipynb`, Section 4). All numbers are on **synthetic data with a communication graph and spreading malware**. No dataset was available. Nothing here validates or rejects PMB on real data.
+
+### 1. Candidates found (search areas)
+
+| Family | Why it is relevant | What it does NOT do |
+|---|---|---|
+| **Bayesian nonparametric (Dirichlet-process) association** | Dependent-DP multi-object tracking handles an unknown, time-varying object count with unknown measurement association, as an alternative to RFS. Dirichlet-process IDS precedent exists (Heard & Rubin-Delanchy). | Usually MCMC (real-time cost); no application to identity+compromise in IoT found |
+| **Multi-stream quickest change detection (CUSUM family)** | Unknown change time and unknown affected subset of streams; adaptive CuSum linear in number of streams; Byzantine variant for compromised sensors. Gives delay/false-alarm theory (relevant to Idea H). | Does not resolve identity |
+| **Belief propagation / graph inference** | Guilt-by-association on device/host graphs (DeviceWatch; enterprise-infection BP). Scalable message passing; candidate engine for BP-MTT. | Assumes node identities are known |
+| **MHT / JPDA** | The classical rivals to RFS (JPDA, MHT, RFS are the three mainstream multi-target paradigms). Expected reviewer baselines. | Not expected to beat PMBM logically |
+| **Hawkes / SIR-Hawkes / epidemic inference** | Models spreading dynamics; suggests a self-exciting birth model for PMB. POMDP-based active node sampling exists as a neighbour of the POMDP framing. | Not an identity method |
+| **Identity-side evidence** | MAC de-randomization by clustering probe-request features; BLE re-identification under randomization; a study found a single device can be misidentified as several devices (a cardinality error). | — |
+
+### 2. What was implemented (all simplified)
+
+`B1c` enrolled-fingerprint classifier (agglomerative clusters on early traffic, nearest centroid). `P2` PMB with Hawkes-style birth prior. `D1` sequential-CRP association (greedy, online, temporal decay; grid-tuned on separate seeds, interior optimum). `J1` JPDA-style soft association. `M1` MHT-lite (beam of 3 hypotheses, 2-window delayed decision). `C1` per-stream CUSUM. `H1` CUSUM/identity-gated hybrid (B1 when calm, PMB when the anomaly-rate CUSUM fires or id-churn exceeds 5%). `G1` loopy BP on the communication graph.
+**Not implemented:** Byzantine-robust CUSUM, POMDP active node sampling, full dependent-DP via MCMC.
+
+### 3. Results (synthetic; F1, heavy corruption, 5 seeds, mean ± std)
+
+| B0 | B1 | B1c | B3 | P1 | P2 | D1 | J1 | M1 | C1 | H1 | G1 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0.990 | 0.977 | 0.270 | 0.705 | 0.888 | 0.889 | 0.835 | 0.816 | 0.834 | 0.811 | 0.888 | 0.432 |
+
+**Fingerprint-separability sweep** (heavy corruption, 3 seeds; smaller base_scale = device fingerprints harder to tell apart): D1/J1/M1 fall from about 0.83 to about 0.57 as separability shrinks, while P1 stays near 0.88 and C1 rises to about 0.90.
+
+### 4. Findings
+
+1. **Nothing beat the crude B1**, which is still the unrealistic stand-in (see Update 6). Do not read this table as "PMB wins".
+2. **Fingerprint-based identity fails exactly on compromised devices.** B1c identified normal records 93% of the time and compromised records 0%, because compromised traffic no longer matches the device's enrolled fingerprint (the synthetic attack shift is large; real shifts vary). This is an argument for belief-based methods, but it rests on one classifier design.
+3. **Feature-association methods (D1, J1, M1) are immune to ID corruption by construction** and are competitive only while fingerprints are separable. They degrade as separability shrinks, which is the realistic concern for CICIoT2023-type rate features.
+4. **The CUSUM gate works as a trigger** (attack alarm one window after onset, zero false alarms before it in the seed-0 run), but in the harness the identity-trouble rule keeps the gate on under any corruption, so H1 equals P1. The hybrid's benefit (compute savings, B1 when calm) is not measured here.
+5. **G1 (BP) raises false isolations** (0.23 on clean data in seed 0), the classic guilt-by-association cost, and collapses under hub/rotation corruption because its nodes are corrupted ids.
+6. **P2 (Hawkes birth) is indistinguishable from P1** in this setup (0.889 vs 0.888).
+7. **C1** has a high false-isolation rate on clean data (0.165, seed 0): a single global baseline for per-stream CUSUM is crude.
+
+### 5. Caveats
+
+- All results are synthetic; the graph generator builds in the homophily and spreading that G1 and P2 are meant to exploit. G1's graph edges are derived from ground-truth links at identity level.
+- B1c's clustering multiplier was chosen on a tuning seed using cluster purity (mild ground-truth use). D1/J1/M1 were tuned; P1 and the others were not, so the comparison is not tuning-neutral.
+- Cluster-to-device evaluation uses a ground-truth majority vote (as B1 already does); this can flatter association methods.
+- Novelty is unchecked: no dedicated sweep for DP/JPDA/MHT/BP/CUSUM applied to IoT identity-plus-compromise tracking.
+
+### 6. Open actions
+
+1. Replace B1's stand-in resolver with the B1c-style design (or a stronger one) in the main Stage 1 comparison.
+2. Test the strongest candidates (PMB, D1, CUSUM gate) on real data once CICIoT2023 pcaps or another dataset with device IDs is available; real feature separability decides the D1/PMB question.
+3. Consider a Byzantine-robust CUSUM variant for the lying-devices stretch (Stage 3).
+4. Add "dependent Dirichlet process", "JPDA", "MHT", "quickest change detection", "belief propagation" plus IoT/botnet/intrusion terms to the novelty-search protocol.
