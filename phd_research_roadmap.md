@@ -545,3 +545,56 @@ Implemented and tested LMB, GM-PHD, and PMB (simplified single-hypothesis PMBM) 
 
 - `lmb_stage0_sanity_check.ipynb` — Stage 0 mechanics check, toy Stage 1 preview, now with multi-seed averaging (Section 6) added on request.
 - `lmb_vs_alternatives_comparison.ipynb` (new) — implements and compares LMB, GM-PHD, and PMB on the same simulator, with the clean-identity and multi-seed corruption experiments described above, plus a written discussion of what the results do and don't support.
+
+---
+---
+
+# UPDATE 5 — 29 Sep 2026 (new section only; everything above is unchanged)
+
+## Decision: LMB vs. PMB vs. PHD — Adopting PMB, With a Planned Upgrade to Full PMBM
+
+**Status:** working decision, based on a toy simulation with independently tuned filters. Not yet validated on CICIoT2023 (Stage 1). Notebook: `lmb_vs_pmb_tuned_comparison.ipynb`.
+
+### Why PHD is disqualified regardless of accuracy
+
+PHD (and CPHD) propagate an unlabeled intensity: they estimate *how many* devices are compromised, never *which* devices. The thesis needs to isolate or throttle a specific device, so PHD cannot be the primary filter no matter how accurate its cardinality estimate is. Kept only as a cited lower-bound reference.
+
+### Fair comparison: LMB vs. PMB, each independently tuned
+
+Earlier comparisons (Update 4) gave LMB and PMB the same, LMB-tuned parameters, which is not a fair test. Each filter was given its own small grid search (birth variance, birth rate/weight, gating/spawn threshold), scored on clean-identity cardinality MAE over held-out tuning seeds, then evaluated on fresh seeds not used for tuning:
+
+| corruption | naive | LMB (tuned) | PMB (tuned) |
+|---|---|---|---|
+| 0.0 | 0.29 | 1.81 | 1.16 |
+| 0.3 | 0.40 | 1.54 | 1.00 |
+| 0.6 | 0.69 | 1.43 | 0.87 |
+| 0.9 | 1.26 | 1.60 | 1.05 |
+
+(Cardinality MAE, mean over 15 seeds, corruption = probability a real device's identity hint is replaced by a shared hub id.)
+
+**Result: PMB beat LMB at every corruption level after independent tuning**, by roughly 30–35% lower error — not a tuning artifact from Update 4's unfair comparison.
+
+**Likely structural reason:** this LMB implementation pre-populates all candidate device labels with a small existence probability from the first timestep, so unborn devices compete for measurements immediately. PMB instead keeps a separate Poisson pool for "not yet detected" and only spawns a confirmed (Bernoulli) track once evidence justifies it — a more principled birth model. This is also consistent with the tracking literature's claim (Update 4) that PMBM/PMB is generally more accurate than LMB because PMBM is an exact conjugate prior while LMB is an approximation of it.
+
+### Working decision
+
+- **Adopt PMB as the current prototype filter.**
+- **Keep LMB as a documented, weaker baseline** in the eventual paper/comparison.
+- **Planned upgrade path: full PMBM** (multi-hypothesis, not the single-hypothesis PMB approximation used here) once fleet-scale testing shows whether PMB's simplification costs meaningful accuracy. Not built yet.
+- **Title implication:** the working title should track this. Current working title said "...with LMB..." (Update 3); given this result, the more accurate near-term title is **"...with PMB..."**, with "eventual upgrade to PMBM" noted in the abstract rather than the title, since the title shouldn't need to change again if the upgrade happens.
+
+### Novelty status (still open, not yet a confirmed claim)
+
+Same finding as for LMB: PMBM/PMB appear across radar, autonomous driving, maritime surveillance, drone traffic monitoring, and LiDAR/vision tracking, but not in IoT security, botnet detection, or intrusion detection, across the searches run so far (a handful of keyword queries, not a full database sweep). This is suggestive of a gap in *RFS-based multi-object tracking applied to device-compromise detection generally* — which is encouraging, since the thesis direction doesn't depend on which specific filter (LMB, PMB, or PMBM) is ultimately used. **Not yet confirmed.** The expanded search protocol (method terms: PMBM, PMB, LMB, GLMB, MBM, RFS; domain terms: IoT, network security, intrusion, botnet, malware, compromised device, cybersecurity, device identification; sources: IEEE Xplore, ACM DL, Scopus, arXiv, Google Scholar) is now recorded in the notebook and should be run before this becomes a written novelty claim.
+
+### Caveats
+
+1. Toy synthetic simulation, single environment configuration; grid search is coarse (a handful of values per parameter) and only optimizes clean-identity MAE, not a fleet-scale or false-isolation-cost objective.
+2. Tuning and evaluation seeds were kept separate to reduce (not eliminate) overfitting risk from the grid search.
+3. This does not replace the Stage 1 CICIoT2023 go/no-go experiment, which remains the real decision point using real identity ambiguity.
+
+## Colab Notebooks (updated)
+
+- `lmb_stage0_sanity_check.ipynb` — Stage 0 mechanics check, toy Stage 1 preview, multi-seed averaging.
+- `lmb_vs_alternatives_comparison.ipynb` — first LMB/PHD/PMB comparison (shared, LMB-tuned parameters — superseded by the tuned version below for the LMB-vs-PMB question, but still the source for the PHD result).
+- `lmb_vs_pmb_tuned_comparison.ipynb` (new) — independently-tuned grid search for LMB and PMB, final tuned comparison, and the expanded literature-search protocol to confirm or reject the "new to IoT" claim.
