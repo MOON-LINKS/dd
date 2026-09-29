@@ -461,3 +461,28 @@ Supporting facts:
 3. Check which datasets expose usable identifiers and hub-aggregated traffic at the granularity needed for the corruption protocol (CICIoT2023 first; others unverified).
 4. Formalize the state, birth/death and measurement models, and decide whether r means "exists" or "compromised" (or a joint mixture).
 5. Prototype Stage 0 and Stage 1 before investing in Stages 2 to 4.
+
+---
+---
+
+# UPDATE 3 — 29 Sep 2026 (new section only; everything above is unchanged)
+
+## Working Title, Finalized Wording
+
+**Federated MARL with LMB for Spoofed-Device IoT Defense**
+
+- **MARL** = Multi-Agent Reinforcement Learning. CTDE is one of the three standard MARL training paradigms (the others being fully centralized training/execution and fully independent/decentralized training), so "Federated MARL" correctly nests CTDE underneath it without naming it in the title.
+- Full formal statement (for the abstract, not the title):
+  > A Dec-POMDP formulation trained via CTDE, where each agent's local belief is estimated with a labeled multi-Bernoulli (LMB) filter to handle spoofed or ambiguous device identity, and only weights/derived belief summaries — never raw traffic — are shared across the fleet.
+- **Status: working title.** "Federated MARL" alone is not novel (federated MARL and CTDE-plus-federation already exist elsewhere, e.g. FedPPO-PG for smart grids, FMRL-LA). The LMB-for-spoofed-identity part is what must carry the novelty, and it is still gated behind the Paper 2 Stage 1 go/no-go test defined in Update 1.
+- **Open scope question:** CTDE requires agents whose actions genuinely affect each other (this is why it needs a centralized critic during training). If fleet devices act independently and only share a trained model, the accurate term is federated RL, not CTDE Dec-POMDP — in that case this title implicitly folds Backup A (coordinated cross-device defense) into Paper 2. Decide and record which case actually applies before finalizing.
+- **Privacy caveat to resolve:** a true centralized critic normally needs access to joint observations/actions across agents, which is in tension with "raw traffic never leaves the device." Federated MARL work resolves this by periodically averaging weights/gradients instead of sharing raw joint state, at some cost to coordination quality under non-IID data. State explicitly, in the eventual paper, what exactly the central point sees.
+
+## LMB Prototype (Colab)
+
+A first, didactic LMB filter prototype was built and tested: `lmb_stage0_sanity_check.ipynb`.
+
+- **What it does:** simulates devices being compromised (birth) and recovering (death) with noisy detections and clutter; implements a simplified LMB filter (predict/associate-via-nearest-neighbor/update/prune); runs the Stage 0 sanity check (does cardinality estimate track the true count?); runs a toy, synthetic preview of Stage 1 (naive distinct-ID counting vs. LMB state-space association, as identity corruption increases).
+- **What it is not:** not the full joint-association GLMB filter from the tracking literature, and not the real Stage 1 experiment (that needs CICIoT2023, real hub/NAT aggregation, real fingerprinting error, and the five-method comparison with GO/downgrade/NO-GO thresholds already defined in Update 1).
+- **Observed behavior on first run:** cardinality estimate tracks the true count's rising/falling shape but is biased low in magnitude at default parameters (tuning candidates: lower `BIRTH_VAR`, raise `P_DETECT`, loosen `GATE_NLL`). The toy identity-corruption comparison is noisy on a single seed/short run; the naive method starts more accurate at zero corruption and the expected crossover is not yet clearly demonstrated — averaging over multiple seeds and longer runs is the next step before reading anything into it.
+- **Next step:** treat this notebook as a mechanics check only. It does not validate or invalidate the LMB idea; that remains the job of the Stage 1 CICIoT2023 experiment.
