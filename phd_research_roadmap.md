@@ -486,3 +486,62 @@ A first, didactic LMB filter prototype was built and tested: `lmb_stage0_sanity_
 - **What it is not:** not the full joint-association GLMB filter from the tracking literature, and not the real Stage 1 experiment (that needs CICIoT2023, real hub/NAT aggregation, real fingerprinting error, and the five-method comparison with GO/downgrade/NO-GO thresholds already defined in Update 1).
 - **Observed behavior on first run:** cardinality estimate tracks the true count's rising/falling shape but is biased low in magnitude at default parameters (tuning candidates: lower `BIRTH_VAR`, raise `P_DETECT`, loosen `GATE_NLL`). The toy identity-corruption comparison is noisy on a single seed/short run; the naive method starts more accurate at zero corruption and the expected crossover is not yet clearly demonstrated — averaging over multiple seeds and longer runs is the next step before reading anything into it.
 - **Next step:** treat this notebook as a mechanics check only. It does not validate or invalidate the LMB idea; that remains the job of the Stage 1 CICIoT2023 experiment.
+
+---
+---
+
+# UPDATE 4 — 29 Sep 2026 (new section only; everything above is unchanged)
+
+## Alternatives to LMB: Comparison and Open Scoping Decision
+
+**Status:** open decision, not resolved. Explored two Colab notebooks: `lmb_stage0_sanity_check.ipynb` (multi-seed averaging added) and a new `lmb_vs_alternatives_comparison.ipynb`.
+
+### Candidates considered
+
+| Algorithm | Relation to LMB | Evidence found | New to IoT security? |
+|---|---|---|---|
+| **PHD / CPHD** | Simpler, cheaper; propagates an unlabeled intensity — gives count and rough state, but **no persistent per-device identity/track**. | Standard, well-established RFS baseline. | Not distinctive on its own |
+| **PMBM (Poisson Multi-Bernoulli Mixture)** | Mathematically more rigorous: an exact closed-form conjugate prior for the standard multi-object model, whereas LMB is an approximation of it. Multiple comparative papers report PMBM has stronger accuracy and efficiency than LMB/GLMB. | Found applied to wireless sensor networks; not found applied to cybersecurity/IoT device-compromise tracking (narrow search only). | Likely, not yet confirmed by a dedicated sweep |
+| **Belief-propagation multi-target tracking (BP-MTT)** | Not a competing state model — a more scalable way to solve the *association* step underneath LMB/GLMB/PMBM, via message passing on a factor graph instead of combinatorial search. Literature describes it as well suited to real-time operation on resource-limited devices. A named variant ("fast LMB using belief propagation", i.e. BP-LMB) speeds up LMB specifically rather than replacing it. Directly addresses the LMB/GLMB scalability weakness already flagged elsewhere in this roadmap. | One close prior-art paper found: BP-based multisensor tracking defending against false-data-injection and denial-of-service attacks on the tracking sensors themselves — adjacent, but not the same application (that paper protects the tracker; this thesis would use the tracker to find compromised devices). | Likely, but this is the closest prior art found so far and needs a dedicated check |
+
+**Key references:** Xia, Granström, Svensson & Fatemi, *"Poisson Multi-Bernoulli Approximations for Multiple Extended Object Filtering,"* arXiv:1801.01353 (PMB — the cheap single-hypothesis approximation of PMBM, used in the notebook below); García-Fernández, Williams, Granström & Svensson, *"Poisson Multi-Bernoulli Mixture Filter: Direct Derivation and Implementation"* (full PMBM); Meyer et al., *"Message Passing Algorithms for Scalable Multitarget Tracking,"* Proc. IEEE, 2018 (BP-MTT); Meyer & Williams, *"A Fast Labeled Multi-Bernoulli Filter Using Belief Propagation"* (BP-LMB).
+
+### Prototype comparison (toy simulation, not CICIoT2023)
+
+Implemented and tested LMB, GM-PHD, and PMB (simplified single-hypothesis PMBM) filters on the same synthetic simulator as the Stage 0 notebook, plus the naive distinct-ID baseline.
+
+**Clean-identity result (single run):** naive was most accurate (has real IDs to exploit), followed by PHD, then PMB, then LMB.
+
+**Multi-seed, identity-corruption result (12 seeds):**
+
+| corruption | naive | LMB | PHD | PMB |
+|---|---|---|---|---|
+| 0.0 | 0.31 | 2.15 | 0.84 | 1.58 |
+| 0.3 | 0.41 | 1.81 | 0.73 | 1.28 |
+| 0.6 | 0.74 | 1.71 | 0.74 | 1.13 |
+| 0.9 | 1.22 | 1.90 | 0.84 | 1.40 |
+
+(Cardinality MAE, mean over 12 seeds; parameters not separately tuned per filter — see caveats.)
+
+**Observations:**
+1. Naive degrades steadily with corruption, as expected.
+2. LMB, PHD and PMB all stay roughly flat across corruption levels — none of their `update()` steps read `id_hint`, only the numeric measurement. This means the identity-robustness argument is a property of *identity-free state-space association in general*, not something unique to LMB specifically.
+3. PHD was the most accurate of the three RFS filters on this toy model, including under corruption — but PHD has no persistent per-device track, so it cannot answer "which device," only "how many." Not a candidate replacement given the thesis's actual requirement.
+4. PMB (the cheap PMBM approximation) did not clearly outperform LMB here; parameters were not independently tuned per filter, so this result should not be read as PMBM underperforming LMB in general — it contradicts the literature's reported PMBM-over-LMB accuracy edge, most likely due to tuning, not a real effect.
+
+### Revised framing
+
+- The differentiator to lead with is **identity-free state-space association for compromise tracking**, not "LMB" as a specific mechanism. LMB is the reference implementation of that idea that keeps per-device identity, which the thesis needs.
+- **PMB/PMBM is the most credible upgrade path** if LMB's approximation quality becomes a limitation; both keep per-device tracks, so either is compatible with the thesis's actual requirement (PHD is not).
+- **BP-MTT (or BP-LMB specifically) is the scalability upgrade**, to be considered after Stage 1, once fleet sizes make the LMB/PMBM combinatorial cost a real bottleneck, not before.
+
+### Caveats on this comparison
+
+1. Toy synthetic simulation only, single parameter set, not independently tuned per filter — do not read the specific numbers above as settled performance claims.
+2. The "new to IoT" claims for PMBM and BP-MTT rest on narrow searches; a dedicated literature sweep (add to the search protocol: PMBM/BP-MTT combined with IoT, botnet, intrusion, device compromise) is still needed before claiming novelty in a paper.
+3. None of this replaces the Stage 1 CICIoT2023 go/no-go experiment, which remains the real test using real identity ambiguity rather than a synthetic corruption knob.
+
+## Colab Notebooks (updated)
+
+- `lmb_stage0_sanity_check.ipynb` — Stage 0 mechanics check, toy Stage 1 preview, now with multi-seed averaging (Section 6) added on request.
+- `lmb_vs_alternatives_comparison.ipynb` (new) — implements and compares LMB, GM-PHD, and PMB on the same simulator, with the clean-identity and multi-seed corruption experiments described above, plus a written discussion of what the results do and don't support.
