@@ -599,3 +599,93 @@ Same finding as for LMB: PMBM/PMB appear across radar, autonomous driving, marit
 - `lmb_stage0_sanity_check.ipynb` — Stage 0 mechanics check, toy Stage 1 preview, multi-seed averaging.
 - `lmb_vs_alternatives_comparison.ipynb` — first LMB/PHD/PMB comparison (shared, LMB-tuned parameters — superseded by the tuned version below for the LMB-vs-PMB question, but still the source for the PHD result).
 - `lmb_vs_pmb_tuned_comparison.ipynb` (new) — independently-tuned grid search for LMB and PMB, final tuned comparison, and the expanded literature-search protocol to confirm or reject the "new to IoT" claim.
+
+---
+---
+
+# UPDATE 6 — 29 Sep 2026 (new section only; everything above is unchanged)
+
+## Stage 1 Go/No-Go: Code Built, Debugged, and First (Synthetic) Results
+
+**Status:** Stage 1 code exists and runs end to end in Colab (`stage1_go_nogo.ipynb`). All results so far are on **synthetic, CICIoT2023-shaped data** and prove only that the pipeline works. **No real Stage 1 verdict exists yet.** Stage 2 to 4 remain gated behind it.
+
+### 1. What was built
+
+A `stage1/` Python package (written into Colab by the notebook), implementing the Update 2 test plan:
+
+| File | Role |
+|---|---|
+| `corruption.py` | Identity-corruption knobs: MAC rotation, hub/NAT aggregation, spoof-duplicates, hidden devices (fingerprint error lives in `detector.py`) |
+| `detector.py` | Swappable anomaly scorer (IsolationForest stand-in for the Paper 1 GRU) and B1's fingerprint resolver |
+| `baselines.py` | B0 oracle IDs, B1 identity-first, B2 aggregate, B3 per-ID belief |
+| `pmb_filter.py` | P1: simplified single-hypothesis PMB (Poisson pool plus confirmed Bernoulli tracks). Not full PMBM |
+| `metrics.py` | Cardinality MAE, precision/recall/F1 mapped to true devices, false-isolation rate. **No OSPA yet** (metric choice still open) |
+| `data.py` | Synthetic generator, `inspect_ciciot2023()`, and the real loader `load_ciciot2023()` |
+| `run_stage1.py` | `run_one_condition()`, `decide()` (the pre-registered rule), `run_all()` |
+
+### 2. Three bugs found by reading the code against this roadmap, and fixed
+
+1. **Detector fitted on the wrong slice.** It was fitted on the first quarter of the *rows* (records are ordered device by device), so it trained on a few devices including attack windows. Now fitted on the earliest *windows by time*. Effect: B0 F1 went from 0.735 to 0.979.
+2. **Decision-rule order.** DOWNGRADE was checked before NO-GO, so NO-GO was unreachable whenever P1 was close to B3. Now: NO-GO (B1 degrades gracefully) -> DOWNGRADE (P1 not clearly ahead of B3) -> GO (P1 recovers enough of the B0-B1 gap) -> otherwise NO-GO for PMB. Thresholds are constants at the top of `run_stage1.py`; `B1_LOSS_FRACTION_NEEDED = 0.10` is a new placeholder that **must be set by the author before real results are read**.
+3. **B3 did not match its definition.** The roadmap says "independent per-device Bernoulli beliefs"; the code was a bare threshold. Now a per-ID recursive belief (same smoothing gain as P1) with no birth model, no existence probability, and no decay.
+
+### 3. Synthetic results (pipeline check only)
+
+Heavy-corruption condition, F1 mean ± std over 10 seeds:
+
+| B0 | B1 | B3 | P1 |
+|---|---|---|---|
+| 0.989 ± 0.011 | 0.899 ± 0.052 | 0.810 ± 0.068 | 0.804 ± 0.065 |
+
+Verdict at these thresholds: **NO-GO** (B1 loses only 9.1% of B0's F1, just under the 10% placeholder threshold; the verdict is sensitive to that threshold). P1 vs B3: no difference within noise at this corruption level.
+
+**Severity sweep** (knobs scaled together from mild to extreme, 6 seeds), F1:
+
+| severity | B0 | B1 | B3 | P1 |
+|---|---|---|---|---|
+| 0.00 | 0.990 | 0.990 | 0.995 | 0.994 |
+| 0.25 | 0.990 | 0.931 | 0.790 | 0.891 |
+| 0.50 | 0.990 | 0.876 | 0.512 | 0.658 |
+| 0.75 | 0.990 | 0.865 | 0.295 | 0.501 |
+| 1.00 | 0.990 | 0.817 | 0.141 | 0.251 |
+
+Reading: P1 beats B3 by roughly 0.1 to 0.2 F1 from severity 0.25 upward, and the gap widens with corruption. This is consistent with Update 5, where PMB overtook the naive method between corruption 0.6 and 0.9 (linear crossover about 0.75 from the table; toy sim, cardinality MAE). P1 never beats B1 in this sweep. The severity sweep is **not yet in the notebook**.
+
+### 4. Key caveats found
+
+1. **B1 is unrealistically strong, so the P1-vs-B1 comparison is unreliable.** `fingerprint_resolve()` does not resolve identity: it returns the corrupted ID and occasionally swaps in a random wrong label. The evaluator also maps labels to true devices by majority vote using ground truth, which favors B1. Fix: replace it with a real resolver (e.g. clustering on traffic features) and score without ground-truth help. Until then, any NO-GO or DOWNGRADE that hinges on B1 is provisional.
+2. **A NO-GO in Stage 1 does not mean PMB is bad.** It means the identity-corruption problem was not severe enough (against B1) to justify a paper. Only the DOWNGRADE branch is a statement about PMB itself.
+3. **Our "heavy corruption" level is milder than the regime where Update 5 saw PMB win** (about 0.75+ identity-hint replacement). The default `run_all()` levels should be extended.
+4. Synthetic corruption is an assumption, not calibrated to published MAC-randomization or fingerprinting-error rates (threat to validity 1 in Update 2).
+
+### 5. Design idea from discussion: attack-gated hybrid (candidate, not adopted)
+
+Run the cheap identity-first pipeline (B1) in normal operation and switch to the PMB filter only when identity trouble or spoofing is suspected. Supported by Update 5 (naive beats PMB at low corruption, PMB wins at high) and reduces compute (relevant to the LMB/PMBM scalability concern).
+- **Trigger must be identity-free** (aggregate anomaly rate, surge of never-seen IDs, duplicate IDs), because identity is what is corrupted.
+- **Cold start:** PMB has no history when switched on; keep a lightweight version warm or warm-start from the last device list.
+- **Hysteresis** needed to avoid mode flapping.
+- Identity corruption also occurs in normal operation (MAC randomization, hubs), so the gate should key on *identity trouble*, not only on "an attack was detected."
+- Adds a fourth Stage 1 method: gated hybrid, expected to match B1 when clean and PMB when corrupted.
+
+### 6. Real-data loader (CICIoT2023)
+
+`inspect_ciciot2023(path)` reports file counts, CSV columns, identity-like columns, label values, and recommends a mode. `load_ciciot2023(path, mode='auto'|'csv'|'pcap', ...)` returns the same record shape as the synthetic generator.
+
+- **CSV mode:** used only if a device-identifier column exists. To my recollection the pre-extracted CICIoT2023 CSVs (46 features + label) have **no** device/MAC/IP column; **verify with `inspect_ciciot2023` on the local copy.** If none, the loader raises a clear error.
+- **pcap mode:** streams pcaps with `dpkt`, builds per-source-MAC time-window features (16 features: packet/byte rates, length mean/std, protocol fractions, SYN/ACK/RST fractions, unique dst IPs/ports, DNS/HTTP/HTTPS fractions, burst rate). These are **not** CICIoT2023's 47 official features. Benign pcaps are processed first so the earliest windows (the detector's fit slice) are benign; a warning fires if attack windows start in the first 25% of time.
+- **Label semantics are a decision the author must own.** Default: in attack pcaps, windows from a source MAC never seen in the benign pcaps (attacker hosts), or listed in `attacker_macs`, are `is_attack=True`. This does **not** capture cases where IoT devices themselves attack (e.g. Mirai) unless `attacker_macs` is supplied, and it does not model "IoT device as compromised victim." Decide whether "compromised device" means attacker host, targeted victim, or infected IoT device before trusting any real-data result.
+- Practical limits: `max_devices`, `max_packets_per_file`, `benign_max_files`, `attack_max_files`, `window_seconds` (default 5 s) exist because the full pcap set is very large.
+- **Tested only on fake, CICIoT2023-shaped pcaps and CSVs** (a few devices, one attacker). Not yet run on the real dataset; pcap link-layer types or file naming in the real set may need adjustments (the benign/attack split relies on 'benign' appearing in the pcap filename).
+
+### 7. Open actions from this update
+
+1. Run `inspect_ciciot2023` on the local dataset; decide CSV vs pcap path; decide the compromised-device definition and set `attacker_macs` / `exclude_macs`.
+2. Replace B1's stand-in resolver with a real one (feature clustering) and remove ground-truth help from its scoring.
+3. Set the decision thresholds (`B1_LOSS_FRACTION_NEEDED`, `RECOVERY_FRACTION_NEEDED`, `B3_MARGIN_NEEDED`) **before** reading real results.
+4. Add the severity sweep (extending past the current "heavy" level) and the attack-gated hybrid as a fourth method to the notebook.
+5. Add the chosen multi-object metric (OSPA or variant) to `metrics.py`.
+6. Then run the real Stage 1; only after a GO proceed to Stage 2.
+
+## Colab Notebooks (updated)
+
+- `stage1_go_nogo.ipynb` (new) — self-contained: writes the `stage1/` package, runs the synthetic dry run, a 10-seed heavy-corruption run, and (Section 4) the real-data inspect/load/run cells, which skip cleanly if `DATA_PATH` does not exist.
