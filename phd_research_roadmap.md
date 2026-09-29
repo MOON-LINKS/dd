@@ -592,6 +592,7 @@ Same finding as for LMB: PMBM/PMB appear across radar, autonomous driving, marit
 1. Toy synthetic simulation, single environment configuration; grid search is coarse (a handful of values per parameter) and only optimizes clean-identity MAE, not a fleet-scale or false-isolation-cost objective.
 2. Tuning and evaluation seeds were kept separate to reduce (not eliminate) overfitting risk from the grid search.
 3. This does not replace the Stage 1 CICIoT2023 go/no-go experiment, which remains the real decision point using real identity ambiguity.
+4. **Grid-edge issue, confirmed on a second run (user-reproduced, identical results):** both filters' best `birth_var` landed on 4.0, the *widest* value in the grid, for both LMB and PMB. That means the search stopped at the edge of the range rather than finding an interior optimum, so the true best value may lie even higher. Before treating `(birth_var=4.0, birth_r=0.05, gate=16.0)` for LMB and `(birth_var=4.0, birth_weight=0.48, gate_spawn=0.02)` for PMB as final tuned parameters, widen the grid (e.g. add 6.0, 8.0 to the `birth_var` options) and re-run Section 4 of `lmb_vs_pmb_tuned_comparison.ipynb`. This is cheap to do and should be done before quoting these numbers anywhere final.
 
 ## Colab Notebooks (updated)
 
