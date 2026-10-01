@@ -603,146 +603,63 @@ Same finding as for LMB: PMBM/PMB appear across radar, autonomous driving, marit
 ---
 ---
 
-# UPDATE 6 — 29 Sep 2026 (new section only; everything above is unchanged)
+# UPDATE 6 — 1 Oct 2026 (new section only; everything above is unchanged)
 
-## Stage 1 Go/No-Go: Code Built, Debugged, and First (Synthetic) Results
+## B0/B1 Clarified, and a Non-Radar Alternative: Bayesian Entity Resolution
 
-**Status:** Stage 1 code exists and runs end to end in Colab (`stage1_go_nogo.ipynb`). All results so far are on **synthetic, CICIoT2023-shaped data** and prove only that the pipeline works. **No real Stage 1 verdict exists yet.** Stage 2 to 4 remain gated behind it.
+**Status:** exploratory. Notebook: `b0_b1_pmb_entityres_comparison.ipynb`.
 
-### 1. What was built
+### What B0 and B1 actually are (clarifying a conflation in earlier notebooks)
 
-A `stage1/` Python package (written into Colab by the notebook), implementing the Update 2 test plan:
+Earlier toy notebooks used a single "naive" baseline (distinct `id_hint` count), which behaves like **B0 at zero corruption** (where `id_hint` happens to equal the true label) and degrades toward a weak **B1** as corruption rises. This update separates them properly:
 
-| File | Role |
-|---|---|
-| `corruption.py` | Identity-corruption knobs: MAC rotation, hub/NAT aggregation, spoof-duplicates, hidden devices (fingerprint error lives in `detector.py`) |
-| `detector.py` | Swappable anomaly scorer (IsolationForest stand-in for the Paper 1 GRU) and B1's fingerprint resolver |
-| `baselines.py` | B0 oracle IDs, B1 identity-first, B2 aggregate, B3 per-ID belief |
-| `pmb_filter.py` | P1: simplified single-hypothesis PMB (Poisson pool plus confirmed Bernoulli tracks). Not full PMBM |
-| `metrics.py` | Cardinality MAE, precision/recall/F1 mapped to true devices, false-isolation rate. **No OSPA yet** (metric choice still open) |
-| `data.py` | Synthetic generator, `inspect_ciciot2023()`, and the real loader `load_ciciot2023()` |
-| `run_stage1.py` | `run_one_condition()`, `decide()` (the pre-registered rule), `run_all()` |
+- **B0 (oracle):** reads the device's *true* identity directly. **Not a real, deployable method** — in practice there is no ground truth to read. It exists only as a mathematical ceiling: the best possible performance if identity were never a problem. The gap between B0 and B1 is the quantified *cost of identity ambiguity*.
+- **B1 (naive/identity-first):** trusts whatever identity hint is attached to each measurement (in reality: a MAC address, a fingerprint-derived guess, etc.). This is what a real "resolve identity, then detect" pipeline becomes.
 
-### 2. Three bugs found by reading the code against this roadmap, and fixed
+### Does a spoofing/masking attacker get "detected" by B0 or B1?
 
-1. **Detector fitted on the wrong slice.** It was fitted on the first quarter of the *rows* (records are ordered device by device), so it trained on a few devices including attack windows. Now fitted on the earliest *windows by time*. Effect: B0 F1 went from 0.735 to 0.979.
-2. **Decision-rule order.** DOWNGRADE was checked before NO-GO, so NO-GO was unreachable whenever P1 was close to B3. Now: NO-GO (B1 degrades gracefully) -> DOWNGRADE (P1 not clearly ahead of B3) -> GO (P1 recovers enough of the B0-B1 gap) -> otherwise NO-GO for PMB. Thresholds are constants at the top of `run_stage1.py`; `B1_LOSS_FRACTION_NEEDED = 0.10` is a new placeholder that **must be set by the author before real results are read**.
-3. **B3 did not match its definition.** The roadmap says "independent per-device Bernoulli beliefs"; the code was a bare threshold. Now a per-ID recursive belief (same smoothing gain as P1) with no birth model, no existence probability, and no decay.
+**No, and the mechanism matters:**
 
-### 3. Synthetic results (pipeline check only)
+- **B0 is immune by construction, not by detection.** It never looks at the identity signal an attacker could manipulate — it reads ground truth, which only exists in a simulation. A real attacker is not caught by B0; B0 simply isn't attackable because it isn't a real pipeline.
+- **B1 is directly vulnerable.** It is not "detecting" spoofing/masking; it is *being misled by it*, which is exactly the vulnerability this thesis direction targets. Confirmed on the toy simulation (15 seeds, cardinality MAE):
 
-Heavy-corruption condition, F1 mean ± std over 10 seeds:
-
-| B0 | B1 | B3 | P1 |
-|---|---|---|---|
-| 0.989 ± 0.011 | 0.899 ± 0.052 | 0.810 ± 0.068 | 0.804 ± 0.065 |
-
-Verdict at these thresholds: **NO-GO** (B1 loses only 9.1% of B0's F1, just under the 10% placeholder threshold; the verdict is sensitive to that threshold). P1 vs B3: no difference within noise at this corruption level.
-
-**Severity sweep** (knobs scaled together from mild to extreme, 6 seeds), F1:
-
-| severity | B0 | B1 | B3 | P1 |
+| corruption | B0 (oracle) | B1 (naive) | PMB | EntityRes |
 |---|---|---|---|---|
-| 0.00 | 0.990 | 0.990 | 0.995 | 0.994 |
-| 0.25 | 0.990 | 0.931 | 0.790 | 0.891 |
-| 0.50 | 0.990 | 0.876 | 0.512 | 0.658 |
-| 0.75 | 0.990 | 0.865 | 0.295 | 0.501 |
-| 1.00 | 0.990 | 0.817 | 0.141 | 0.251 |
+| 0.0 | 0.292 | 0.292 | 1.159 | 1.159* |
+| 0.3 | 0.268 | 0.403 | 0.997 | 0.965 |
+| 0.6 | 0.249 | 0.686 | 0.869 | 0.894 |
+| 0.9 | 0.304 | 1.264 | 1.046 | 1.096 |
 
-Reading: P1 beats B3 by roughly 0.1 to 0.2 F1 from severity 0.25 upward, and the gap widens with corruption. This is consistent with Update 5, where PMB overtook the naive method between corruption 0.6 and 0.9 (linear crossover about 0.75 from the table; toy sim, cardinality MAE). P1 never beats B1 in this sweep. The severity sweep is **not yet in the notebook**.
+(*The identical value at corruption 0.0 is coincidental — verified the underlying per-timestep estimates are not identical, just close in aggregate mean on this run.)
 
-### 4. Key caveats found
+B0 stays flat regardless of corruption (immune by construction). B1 climbs steadily (0.292 → 1.264) — this is the real, quantified effect of an identity-trusting pipeline being spoofed. PMB and EntityRes both stay comparatively flat, since neither reads the identity hint at all.
 
-1. **B1 is unrealistically strong, so the P1-vs-B1 comparison is unreliable.** `fingerprint_resolve()` does not resolve identity: it returns the corrupted ID and occasionally swaps in a random wrong label. The evaluator also maps labels to true devices by majority vote using ground truth, which favors B1. Fix: replace it with a real resolver (e.g. clustering on traffic features) and score without ground-truth help. Until then, any NO-GO or DOWNGRADE that hinges on B1 is provisional.
-2. **A NO-GO in Stage 1 does not mean PMB is bad.** It means the identity-corruption problem was not severe enough (against B1) to justify a paper. Only the DOWNGRADE branch is a statement about PMB itself.
-3. **Our "heavy corruption" level is milder than the regime where Update 5 saw PMB win** (about 0.75+ identity-hint replacement). The default `run_all()` levels should be extended.
-4. Synthetic corruption is an assumption, not calibrated to published MAC-randomization or fingerprinting-error rates (threat to validity 1 in Update 2).
+**Caveat on PMB/EntityRes:** flat performance here is specific to *identity-hint corruption* (relabeling). A more sophisticated attacker mimicking a legitimate device's behavioral signature (the measurement itself, not just its claimed identity) would be a different, harder attack not tested by this notebook.
 
-### 5. Design idea from discussion: attack-gated hybrid (candidate, not adopted)
+### A non-radar alternative: Bayesian online entity resolution
 
-Run the cheap identity-first pipeline (B1) in normal operation and switch to the PMB filter only when identity trouble or spoofing is suspected. Supported by Update 5 (naive beats PMB at low corruption, PMB wins at high) and reduces compute (relevant to the LMB/PMBM scalability concern).
-- **Trigger must be identity-free** (aggregate anomaly rate, surge of never-seen IDs, duplicate IDs), because identity is what is corrupted.
-- **Cold start:** PMB has no history when switched on; keep a lightweight version warm or warm-start from the last device list.
-- **Hysteresis** needed to avoid mode flapping.
-- Identity corruption also occurs in normal operation (MAC randomization, hubs), so the gate should key on *identity trouble*, not only on "an attack was detected."
-- Adds a fourth Stage 1 method: gated hybrid, expected to match B1 when clean and PMB when corrupted.
+Built and tested a filter motivated by **Bayesian/streaming record linkage** (Fellegi & Sunter, 1969; Taylor, Kaplan & Betancourt, *"Fast Bayesian Record Linkage for Streaming Data Contexts,"* 2023) rather than target tracking — a genuinely separate field (statistics/databases, originating in census and survey-matching work), with its own streaming/sequential variant that maintains a posterior over the number of distinct entities as data arrives.
 
-### 6. Real-data loader (CICIoT2023)
+**Why this matters for the "you used a radar method" attack:** it doesn't need rebutting if the underlying math comes from a different field entirely. Record linkage has zero radar lineage.
 
-`inspect_ciciot2023(path)` reports file counts, CSV columns, identity-like columns, label values, and recommends a mode. `load_ciciot2023(path, mode='auto'|'csv'|'pcap', ...)` returns the same record shape as the synthetic generator.
+**Implementation caveat:** this is a cheap, greedy, single-MAP-assignment approximation (entities compete for each measurement via a popularity-weighted — CRP-like — likelihood, with stale entities dropped via "blocking," a standard record-linkage technique). The real papers use full posterior inference (Gibbs/SMC sampling over the partition structure). This captures the idea, not a faithful implementation.
 
-- **CSV mode:** used only if a device-identifier column exists. To my recollection the pre-extracted CICIoT2023 CSVs (46 features + label) have **no** device/MAC/IP column; **verify with `inspect_ciciot2023` on the local copy.** If none, the loader raises a clear error.
-- **pcap mode:** streams pcaps with `dpkt`, builds per-source-MAC time-window features (16 features: packet/byte rates, length mean/std, protocol fractions, SYN/ACK/RST fractions, unique dst IPs/ports, DNS/HTTP/HTTPS fractions, burst rate). These are **not** CICIoT2023's 47 official features. Benign pcaps are processed first so the earliest windows (the detector's fit slice) are benign; a warning fires if attack windows start in the first 25% of time.
-- **Label semantics are a decision the author must own.** Default: in attack pcaps, windows from a source MAC never seen in the benign pcaps (attacker hosts), or listed in `attacker_macs`, are `is_attack=True`. This does **not** capture cases where IoT devices themselves attack (e.g. Mirai) unless `attacker_macs` is supplied, and it does not model "IoT device as compromised victim." Decide whether "compromised device" means attacker host, targeted victim, or infected IoT device before trusting any real-data result.
-- Practical limits: `max_devices`, `max_packets_per_file`, `benign_max_files`, `attack_max_files`, `window_seconds` (default 5 s) exist because the full pcap set is very large.
-- **Tested only on fake, CICIoT2023-shaped pcaps and CSVs** (a few devices, one attacker). Not yet run on the real dataset; pcap link-layer types or file naming in the real set may need adjustments (the benign/attack split relies on 'benign' appearing in the pcap filename).
+**Result:** EntityRes performs comparably to PMB (within noise of each other across corruption levels) — not a clear win either way on this toy model. Interesting mainly because it reaches similar robustness through a completely different, non-tracking lineage.
 
-### 7. Open actions from this update
+### A natively-networking piece, for the measurement layer (not the belief layer)
 
-1. Run `inspect_ciciot2023` on the local dataset; decide CSV vs pcap path; decide the compromised-device definition and set `attacker_macs` / `exclude_macs`.
-2. Replace B1's stand-in resolver with a real one (feature clustering) and remove ground-truth help from its scoring.
-3. Set the decision thresholds (`B1_LOSS_FRACTION_NEEDED`, `RECOVERY_FRACTION_NEEDED`, `B3_MARGIN_NEEDED`) **before** reading real results.
-4. Add the severity sweep (extending past the current "heavy" level) and the attack-gated hybrid as a fourth method to the notebook.
-5. Add the chosen multi-object metric (OSPA or variant) to `metrics.py`.
-6. Then run the real Stage 1; only after a GO proceed to Stage 2.
+Searched specifically for IoT/networking-native identity techniques. Found: clock-skew and TCP/IP-stack fingerprinting (Kohno et al., *"Remote Physical Device Fingerprinting"*), the established technique for counting/distinguishing devices behind a shared NAT/IP using hardware clock deviations — genuinely IoT/networking-native, zero radar lineage. But its own literature states counting hosts behind a NAT is unstable over time, as devices may enter and leave a network — i.e., it's a snapshot estimator, not a sequential belief tracker.
+
+**Proposed combination:** use clock-skew/TCP fingerprinting as the *measurement model* (produces identity evidence each timestep) feeding a *sequential belief core* (PMB or the entity-resolution filter). This grounds the measurement layer in native networking literature and the belief-update layer in either tracking (PMB) or record linkage (EntityRes) — not in radar sensing itself, since the "sensor" is now a network fingerprinting technique. Not yet built or tested.
+
+### Open items
+
+1. Whether Bayesian record linkage has itself been applied to IoT/device-compromise tracking is unconfirmed (same unresolved novelty question as PMB, moved to a different method) — add "record linkage" / "entity resolution" to the expanded search protocol (Update 5).
+2. EntityRes vs. PMB needs independent per-filter tuning (as was done for LMB vs. PMB in Update 5) before any performance claim between them is trustworthy.
+3. The clock-skew-fingerprinting + sequential-belief combination described above is proposed, not built.
+4. None of this replaces the Stage 1 CICIoT2023 go/no-go experiment.
 
 ## Colab Notebooks (updated)
 
-- `stage1_go_nogo.ipynb` (new) — self-contained: writes the `stage1/` package, runs the synthetic dry run, a 10-seed heavy-corruption run, and (Section 4) the real-data inspect/load/run cells, which skip cleanly if `DATA_PATH` does not exist.
-
----
----
-
-# UPDATE 7 — 29 Sep 2026 (new section only; everything above is unchanged)
-
-## Alternatives to PMB: Literature Scan and Synthetic Comparison
-
-**Status:** exploratory. Six targeted web searches (not a systematic review) plus implementation of the candidate methods in the Stage 1 harness (`stage1_go_nogo.ipynb`, Section 4). All numbers are on **synthetic data with a communication graph and spreading malware**. No dataset was available. Nothing here validates or rejects PMB on real data.
-
-### 1. Candidates found (search areas)
-
-| Family | Why it is relevant | What it does NOT do |
-|---|---|---|
-| **Bayesian nonparametric (Dirichlet-process) association** | Dependent-DP multi-object tracking handles an unknown, time-varying object count with unknown measurement association, as an alternative to RFS. Dirichlet-process IDS precedent exists (Heard & Rubin-Delanchy). | Usually MCMC (real-time cost); no application to identity+compromise in IoT found |
-| **Multi-stream quickest change detection (CUSUM family)** | Unknown change time and unknown affected subset of streams; adaptive CuSum linear in number of streams; Byzantine variant for compromised sensors. Gives delay/false-alarm theory (relevant to Idea H). | Does not resolve identity |
-| **Belief propagation / graph inference** | Guilt-by-association on device/host graphs (DeviceWatch; enterprise-infection BP). Scalable message passing; candidate engine for BP-MTT. | Assumes node identities are known |
-| **MHT / JPDA** | The classical rivals to RFS (JPDA, MHT, RFS are the three mainstream multi-target paradigms). Expected reviewer baselines. | Not expected to beat PMBM logically |
-| **Hawkes / SIR-Hawkes / epidemic inference** | Models spreading dynamics; suggests a self-exciting birth model for PMB. POMDP-based active node sampling exists as a neighbour of the POMDP framing. | Not an identity method |
-| **Identity-side evidence** | MAC de-randomization by clustering probe-request features; BLE re-identification under randomization; a study found a single device can be misidentified as several devices (a cardinality error). | — |
-
-### 2. What was implemented (all simplified)
-
-`B1c` enrolled-fingerprint classifier (agglomerative clusters on early traffic, nearest centroid). `P2` PMB with Hawkes-style birth prior. `D1` sequential-CRP association (greedy, online, temporal decay; grid-tuned on separate seeds, interior optimum). `J1` JPDA-style soft association. `M1` MHT-lite (beam of 3 hypotheses, 2-window delayed decision). `C1` per-stream CUSUM. `H1` CUSUM/identity-gated hybrid (B1 when calm, PMB when the anomaly-rate CUSUM fires or id-churn exceeds 5%). `G1` loopy BP on the communication graph.
-**Not implemented:** Byzantine-robust CUSUM, POMDP active node sampling, full dependent-DP via MCMC.
-
-### 3. Results (synthetic; F1, heavy corruption, 5 seeds, mean ± std)
-
-| B0 | B1 | B1c | B3 | P1 | P2 | D1 | J1 | M1 | C1 | H1 | G1 |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| 0.990 | 0.977 | 0.270 | 0.705 | 0.888 | 0.889 | 0.835 | 0.816 | 0.834 | 0.811 | 0.888 | 0.432 |
-
-**Fingerprint-separability sweep** (heavy corruption, 3 seeds; smaller base_scale = device fingerprints harder to tell apart): D1/J1/M1 fall from about 0.83 to about 0.57 as separability shrinks, while P1 stays near 0.88 and C1 rises to about 0.90.
-
-### 4. Findings
-
-1. **Nothing beat the crude B1**, which is still the unrealistic stand-in (see Update 6). Do not read this table as "PMB wins".
-2. **Fingerprint-based identity fails exactly on compromised devices.** B1c identified normal records 93% of the time and compromised records 0%, because compromised traffic no longer matches the device's enrolled fingerprint (the synthetic attack shift is large; real shifts vary). This is an argument for belief-based methods, but it rests on one classifier design.
-3. **Feature-association methods (D1, J1, M1) are immune to ID corruption by construction** and are competitive only while fingerprints are separable. They degrade as separability shrinks, which is the realistic concern for CICIoT2023-type rate features.
-4. **The CUSUM gate works as a trigger** (attack alarm one window after onset, zero false alarms before it in the seed-0 run), but in the harness the identity-trouble rule keeps the gate on under any corruption, so H1 equals P1. The hybrid's benefit (compute savings, B1 when calm) is not measured here.
-5. **G1 (BP) raises false isolations** (0.23 on clean data in seed 0), the classic guilt-by-association cost, and collapses under hub/rotation corruption because its nodes are corrupted ids.
-6. **P2 (Hawkes birth) is indistinguishable from P1** in this setup (0.889 vs 0.888).
-7. **C1** has a high false-isolation rate on clean data (0.165, seed 0): a single global baseline for per-stream CUSUM is crude.
-
-### 5. Caveats
-
-- All results are synthetic; the graph generator builds in the homophily and spreading that G1 and P2 are meant to exploit. G1's graph edges are derived from ground-truth links at identity level.
-- B1c's clustering multiplier was chosen on a tuning seed using cluster purity (mild ground-truth use). D1/J1/M1 were tuned; P1 and the others were not, so the comparison is not tuning-neutral.
-- Cluster-to-device evaluation uses a ground-truth majority vote (as B1 already does); this can flatter association methods.
-- Novelty is unchecked: no dedicated sweep for DP/JPDA/MHT/BP/CUSUM applied to IoT identity-plus-compromise tracking.
-
-### 6. Open actions
-
-1. Replace B1's stand-in resolver with the B1c-style design (or a stronger one) in the main Stage 1 comparison.
-2. Test the strongest candidates (PMB, D1, CUSUM gate) on real data once CICIoT2023 pcaps or another dataset with device IDs is available; real feature separability decides the D1/PMB question.
-3. Consider a Byzantine-robust CUSUM variant for the lying-devices stretch (Stage 3).
-4. Add "dependent Dirichlet process", "JPDA", "MHT", "quickest change detection", "belief propagation" plus IoT/botnet/intrusion terms to the novelty-search protocol.
+- `lmb_stage0_sanity_check.ipynb`, `lmb_vs_alternatives_comparison.ipynb`, `lmb_vs_pmb_tuned_comparison.ipynb` — as before.
+- `b0_b1_pmb_entityres_comparison.ipynb` (new) — proper B0 (oracle) vs. B1 (naive) separation, PMB, and the new Bayesian entity-resolution filter, with a written explanation of why spoofing defeats B1 but not B0 (and why that's not the same as B0 being a real defense).
