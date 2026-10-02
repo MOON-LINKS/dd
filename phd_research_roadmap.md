@@ -694,6 +694,97 @@ This remains a toy synthetic simulation. The real decision point is still the St
 Title implication: given this decision, the working title's filter reference should move from "PMB" (Update 5) toward something that names the hybrid, or stays deliberately generic (e.g., "identity-robust belief") until the Stage 1 result confirms which front end — or whether the hybrid framing itself — survives contact with real data.
 
 
+---
+---
+
+# UPDATE 8 — 2 Oct 2026 (new sections only; everything above is unchanged)
+
+## Correction: Moving Away from "Better Identity Resolution" as the Core Gap
+
+**What changed:** earlier updates (6–7) treated identity-robust device tracking (LMB/PMB/EntityRes) as the central novel contribution. Checked against the current IoT security literature directly, and that framing doesn't hold up as the lead contribution.
+
+**Why:** device identification is an active, sophisticated arms race, not a stable target to outperform:
+- Current methods already use rich, multi-dimensional signals (RF fingerprinting, hardware-behavior sequences via LSTM-CNN, packet-sequence signatures) — far beyond the single-scalar anomaly measurement used in the toy filters built here.
+- Attackers are already adaptive, not just relabeling: a 2026 paper shows a collusion-driven impersonation attack (VAE-generated synthetic signals) defeating RF fingerprinting, long considered one of the hardest identifiers to spoof. Standard ML evasion (FGSM/PGD/UAP) against fingerprinting classifiers is already a studied, partly-successful attack class.
+- Defenders are already racing on exactly this problem: a 2026 game-theoretic MAC-obfuscation defense holds attackers to near-random-guess accuracy, with its own documented limits against an adaptive attacker.
+- The toy `EntityResolutionFilter`/`PMBFilter` built here were never tested against an adaptive/mimicry attacker — only against static identity-hint relabeling, a much easier threat model than the field actually studies.
+
+**Corrected framing:** don't compete with fingerprinting specialists. Instead, treat whatever identification signal is deployed (fingerprinting or otherwise) as an **unreliable, potentially adversarial sensor**, and make the POMDP belief state explicitly represent confidence in that sensor itself. When identification confidence degrades (e.g., under an active evasion attack on the fingerprinting layer), the belief and the resulting policy should reflect that — not trust a possibly-compromised signal blindly. This is a decision-under-unreliable-evidence contribution, not an identification contribution, and it still uses the belief/POMDP infrastructure already built, just retargeted.
+
+**Still open:** build and run the adaptive/mimicry-attack test against the toy filters (proposed, not yet built) to get a real number for "does belief-aware trust degrade gracefully vs. a plain detector."
+
+## A Broader, Better-Evidenced Gap: Cross-Protocol Lateral Movement
+
+Found while deliberately broadening the search past identity/fingerprinting, per explicit request to not over-fit to one narrow angle.
+
+**The gap, with evidence:**
+- A 2017 paper demonstrates a real, working cross-protocol pivot: compromising a smart TV over WiFi (via a known CVE), then using it to attack a Zigbee smart lock on the same home hub's other protocol segment.
+- A 2026 Z-Wave dataset paper reviewing 30 IoT datasets explicitly lists **lack of support for multi-protocol analysis** as one of 22 concrete shortcomings — current datasets don't support studying mixed-protocol interactions.
+- A 2026 paper (BRIDGE/TCH-Net) built the first formal cross-domain benchmark for IoT botnet detection specifically because the field lacks a reliable answer to how well detection generalizes across network environments — their baseline (mean LODO F1 ≈ 0.56) confirms detection degrades substantially when the network environment shifts.
+- Enterprise lateral-movement detection is mature (graph neural networks on authentication logs) but nothing found applies a belief-driven/POMDP approach to a device pivoting across IoT protocol boundaries specifically (Zigbee → hub → WiFi → 5G).
+
+**Why it fits the existing stack:** the MMPP/POMDP spread model already tracks infection propagation; extending it to track propagation *across* protocol/domain boundaries is a natural extension, not a new pillar. It also connects back to the identity problem rather than replacing it: a Zigbee-to-WiFi hub is exactly where device identity becomes most ambiguous (many devices aggregated behind one identity) **and** exactly the chokepoint an attacker must cross to pivot — the two gaps meet at the same physical point.
+
+**Status:** promising, but only checked with ~3 targeted searches so far — needs the same systematic sweep (IEEE Xplore/ACM DL/Scopus, not just general web search) before being trusted as confirmed novel, same standard applied to the PMB/LMB checks earlier.
+
+## Paper 2: Contribution Candidates (moving beyond "federated version of Paper 1")
+
+**Closest related work found:** FRL-IPS (federated DDQN intrusion-prevention for multi-domain SDN, Flower framework, explicit IID vs. non-IID evaluation). Key quoted finding: *federated training can reach prevention behavior comparable to centralized training at steady state, but requires more training to stabilize, with heterogeneity further increasing transient variability and stabilization time.* No POMDP/belief, no novelty/zero-day state, no identity ambiguity — the clearest differentiation points.
+
+**Candidate 1 (lead candidate): MBRL sample-efficiency vs. federated convergence cost.** FRL-IPS uses model-free DDQN, which needs real interaction per update. Paper 1's core is model-based (GRU world model), which can train on simulated rollouts instead. Testable question: **does MBRL's sample efficiency reduce the federated non-IID stabilization-time penalty FRL-IPS documents for model-free methods?** Concrete, has a real baseline (FRL-IPS's own stabilization-time numbers) to compare against, reuses existing Paper 1 infrastructure.
+
+**Candidate 2: Byzantine-robust belief fusion.** Standard federated learning defends against poisoned weights; nothing found defends against poisoned *beliefs* — a compromised fleet device lying about its own existence/compromise probability. Proposed: KL-divergence-based downweighting of local beliefs that diverge sharply from consensus (echoes the consensus-LMB/secure-fusion idea from early roadmap notes, never built). Natural companion to whichever identity-robustness result Stage 1 produces, not a replacement.
+
+**Candidate 3 (lower priority / future): cross-protocol generalization.** Report LODO-style (leave-one-domain-out) results the way BRIDGE/TCH-Net does, with the fleet explicitly spanning heterogeneous protocols/domains rather than one vendor's homogeneous devices. Overlaps with the cross-protocol direction above; treat as a stretch/future extension rather than folding into Paper 2 now.
+
+**Two other papers checked and ruled out as off-topic:**
+- "Toward Improved Deep Learning-based Vulnerability Detection" (and similar) — source-code static analysis (finding CVE-level bugs in code, e.g. ReVeal/DeepWukong/LineVul), a different field entirely (software engineering, not network/device compromise detection). Not relevant unless the thesis explicitly pivots toward firmware/source-level vulnerability discovery.
+- "Context-Aware Reinforcement Hyper-Heuristic Allocation for Dynamic Wireless Resource Management" — exact paper not located by search; the general area (context-aware RL for wireless bandwidth/power/channel allocation) is a real, populated field but is about resource-allocation efficiency, not security. Tangential at best; revisit if a specific link/detail is found.
+
+## Non-IID Conditions, Defined
+
+**IID** (Independent and Identically Distributed): the standard assumption that every data point is drawn independently from the same underlying distribution — no client's data is systematically different from any other's.
+
+**Non-IID** breaks this, in several distinct ways relevant to a fleet:
+| Type | Meaning | Example in the fleet |
+|---|---|---|
+| Label skew | Different clients see different proportions of attack types | A camera sees mostly recon traffic; a lock never sees DDoS |
+| Feature skew | Same label, different underlying traffic pattern | "Compromised" traffic looks different on a lock vs. a camera even under the same attack family |
+| Quantity skew | Very different data volumes per client | A gateway generates far more traffic than a battery sensor |
+| Temporal/concept drift | Same event, experienced at different times by different clients | A new attack hits 3 devices in one region before the rest of the fleet sees it (already the Paper 2 example in the roadmap) |
+
+**Why it matters:** plain FedAvg implicitly assumes near-IID data to converge cleanly; under non-IID conditions, local models drift toward what each client individually sees, and averaging drifted models can converge more slowly or less stably (this is why FedProx — used in Amamou et al. — adds a proximal term to limit local drift). FRL-IPS's own results confirm the practical cost directly: non-IID didn't break their system, but it did increase instability and stabilization time.
+
+**Required for Paper 2's lead contribution (Candidate 1 above):** the experiment needs an explicit non-IID condition to test against — an all-IID run can't show whether MBRL handles heterogeneity better, only that both approaches work when there's nothing hard to handle. Plan: report both an artificial IID split (shuffled, random per-client slices) and a natural non-IID split (partitioned by device type/category) for both the MBRL and the model-free baseline, and compare stabilization time and final performance the same way FRL-IPS did.
+
+## Datasets: Real and Freely Accessible (not simulated)
+
+Confirmed by direct check, not memory:
+
+- **CICIoT2023** — free direct download from the University of New Brunswick (https://www.unb.ca/cic/datasets/iotdataset-2023.html), also mirrored on Kaggle; ~13 GB uncompressed CSV, raw pcap also available; only requirement is citation. 105 devices, 33 attacks across 7 categories, per-device identifiers present (already the Stage 1 basis in the roadmap).
+- **Edge-IIoTset** — free (Kaggle and IEEE DataPort), and purpose-built by its own authors for a centralized-vs-federated-learning comparison specifically, with existing shared federated-preprocessing notebooks on Kaggle as a starting point.
+
+**What's real vs. what you still build yourself:**
+| Piece | Source |
+|---|---|
+| Raw traffic, attack labels, device identifiers | Real — from the dataset |
+| IID client split (shuffled random per-client slices) | **You construct this** — no dataset ships pre-split |
+| Non-IID client split (grouped by device type/category) | **You construct this** — group real rows by device identifier, assign groups to simulated clients |
+| Attack traffic patterns within each split | Real — regrouped, not invented |
+
+No dataset comes pre-packaged as "client 1 / client 2 / ..." — the federated client-splitting protocol (how many clients, which devices go where, IID vs. non-IID assignment) is something to design on top of real data, the same way the Stage 1 identity-corruption protocol was designed on top of real CICIoT2023 data.
+
+**Suggested split of labor between the two datasets:** Edge-IIoTset for the federated-mechanics/non-IID validation (its authors already established an IID/non-IID precedent to extend), CICIoT2023 for the Stage 1 identity/zero-day work already scoped in earlier updates.
+
+## Working Title (unresolved, two open decisions)
+
+Candidate: **"Belief-Driven Zero-Day Defense via Federated Reinforcement Learning in Heterogeneous IoT Networks"**
+
+Two decisions still needed before this is final:
+1. **MARL vs. federated RL** — "MARL" claims real-time coordination between agents (Backup A's territory). Everything scoped for Paper 2 so far (including the FRL-IPS comparison and Candidate 1 above) is **federated RL** — independent agents, shared training, no real-time coordination. Use "federated reinforcement learning," not "MARL," unless Backup A's coordination is deliberately folded in as a scope decision.
+2. **"Heterogeneous" is ambiguous** — could mean heterogeneous protocols (the cross-protocol gap above), heterogeneous device types/non-IID data (already in scope for Paper 2), or heterogeneous network domains (BRIDGE/TCH-Net-style cross-dataset generalization, the lower-priority Candidate 3). Pick which one(s) the title is claiming before finalizing.
+
+
 ### Open items
 
 1. Whether Bayesian record linkage has itself been applied to IoT/device-compromise tracking is unconfirmed (same unresolved novelty question as PMB, moved to a different method) — add "record linkage" / "entity resolution" to the expanded search protocol (Update 5).
