@@ -652,6 +652,48 @@ Searched specifically for IoT/networking-native identity techniques. Found: cloc
 
 **Proposed combination:** use clock-skew/TCP fingerprinting as the *measurement model* (produces identity evidence each timestep) feeding a *sequential belief core* (PMB or the entity-resolution filter). This grounds the measurement layer in native networking literature and the belief-update layer in either tracking (PMB) or record linkage (EntityRes) — not in radar sensing itself, since the "sensor" is now a network fingerprinting technique. Not yet built or tested.
 
+UPDATE 7 — 2 Oct 2026 (new section only; everything above is unchanged)
+Formal Decision: Hybrid Filter — Entity-Resolution Front End + Shared Bayesian Core
+
+Status: working decision, based on a toy simulation with properly, independently tuned filters, including a grid-edge correction that was missed in Update 5. Notebook: hybrid_pmb_entityres_tuned_comparison.ipynb.
+
+Grid-edge correction (fixes the open item flagged in Update 5/6)
+
+Update 5 flagged that both LMB's and PMB's tuned birth_var landed on 4.0, the edge of that grid, and should be re-checked. Re-checked here: the true plateau for both PMB and EntityRes sits around birth_var ≈ 24, not 4.0. Confirmed by sweeping birth_var from 8 up to 64 and observing MAE stop improving meaningfully past ~24. The earlier Update 5 tuned parameters (birth_var=4.0 for both LMB and PMB) should be considered superseded for PMB; re-tune LMB the same way before quoting its Update 5 numbers as final.
+
+Fair comparison, final tuned parameters
+PMB: birth_var=24.0, birth_weight=0.72, gate_spawn=0.05
+EntityRes: birth_var=24.0, conc=1.8, max_stale=5
+corruption	B0 (oracle)	B1 (naive)	PMB (tuned)	EntityRes (tuned)
+0.0	0.292	0.292	0.812	0.822
+0.3	0.268	0.403	0.774	0.749
+0.6	0.249	0.686	0.692	0.742
+0.9	0.304	1.264	0.770	0.774
+
+(Cardinality MAE, mean over 15 fresh seeds; tuning used separate seeds 1000+.)
+
+Result: PMB and EntityRes are statistically tied at every corruption level — the earlier apparent PMB-vs-EntityRes difference (Update 6) was a tuning artifact, not a real effect, consistent with the general lesson that LMB's earlier apparent weakness (Update 5) was real but PMB/EntityRes's relative ordering was not yet settled until both were fairly tuned.
+
+Why this result changes the recommendation, not just the numbers
+
+PMB's and EntityRes's update() methods share identical math for the existence/state recursion (Kalman gain, likelihood-vs-clutter ratio, the r update formula). The only functional difference is the association and birth layer: PMB's nearest-neighbor matching plus a Poisson "undetected" pool (multi-object-tracking lineage) versus EntityRes's popularity-weighted, CRP-style matching plus blocking-based pruning (Bayesian/streaming record-linkage lineage, zero radar heritage). Since performance is tied, the choice between them is a framing and defensibility question, not a performance question.
+
+Formal decision
+
+Adopt the entity-resolution-style association/birth front end as the primary design, on the shared Bayesian-filtering core.
+
+Removes the "why did you import radar tracking math" vulnerability at zero measured performance cost — record linkage descends from census/survey-matching statistics (Fellegi & Sunter, 1969), not radar.
+The Bayesian filtering core itself (Kalman-style sequential state estimation) is not radar-specific to begin with — it's domain-general probability theory, used across finance, robotics, and GPS.
+Reframed novelty claim: record-linkage-style identity association combined with multi-object Bayesian state estimation, applied to compromised-device tracking. This combination, not either ingredient alone, is the thing to check for novelty and the thing to describe in the eventual paper.
+PMB is not discarded. It remains the literature-grounded reference point (PMBM is the literature's own "more accurate than LMB" claim) and a documented alternative front end on the same shared core.
+Open items
+New novelty-search entry: whether this specific hybrid (record-linkage association + multi-object Bayesian state estimation, for device-compromise tracking) has prior art — not yet checked; add to the expanded search protocol (Update 5) alongside the existing PMBM/LMB/record-linkage terms.
+Re-tune LMB with the corrected, wider grid before trusting its Update 5 comparison numbers against PMB.
+Both front ends still use a single-point (greedy MAP) approximation of their respective full methods (full PMBM multi-hypothesis; full Bayesian record-linkage posterior sampling). The upgrade path applies to the shared core regardless of which front end is chosen.
+This remains a toy synthetic simulation. The real decision point is still the Stage 1 CICIoT2023 go/no-go experiment.
+Title implication: given this decision, the working title's filter reference should move from "PMB" (Update 5) toward something that names the hybrid, or stays deliberately generic (e.g., "identity-robust belief") until the Stage 1 result confirms which front end — or whether the hybrid framing itself — survives contact with real data.
+
+
 ### Open items
 
 1. Whether Bayesian record linkage has itself been applied to IoT/device-compromise tracking is unconfirmed (same unresolved novelty question as PMB, moved to a different method) — add "record linkage" / "entity resolution" to the expanded search protocol (Update 5).
