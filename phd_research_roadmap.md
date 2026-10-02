@@ -796,3 +796,44 @@ Two decisions still needed before this is final:
 
 - `lmb_stage0_sanity_check.ipynb`, `lmb_vs_alternatives_comparison.ipynb`, `lmb_vs_pmb_tuned_comparison.ipynb` — as before.
 - `b0_b1_pmb_entityres_comparison.ipynb` (new) — proper B0 (oracle) vs. B1 (naive) separation, PMB, and the new Bayesian entity-resolution filter, with a written explanation of why spoofing defeats B1 but not B0 (and why that's not the same as B0 being a real defense).
+
+
+---
+---
+
+# UPDATE 9 — 2 Oct 2026 (new section only; everything above is unchanged)
+
+## Clarified: MARL/CTDE vs. Federated RL vs. Non-IID (terminology lock-in)
+
+Resolved a recurring conflation from this session, worth recording precisely so it doesn't resurface:
+
+- **Non-IID** is a property of the *data* (does each device's local traffic look statistically different from the others'?). **Heterogeneous traffic** is the real-world *cause* of non-IID (different device types naturally produce different traffic) — the two are cause and effect, not synonyms, and should be kept textually distinct in the eventual paper.
+- **Federated** is a property of *how knowledge is shared for training* (weights/gradients, not raw traffic).
+- **CTDE/MARL** is a property of *training architecture and runtime coordination* (a central critic sees joint information during training; at runtime, agents may or may not genuinely affect each other's decisions).
+- These three axes are independent and stackable in one environment (a federated, CTDE-coordinated fleet operating on heterogeneous, non-IID traffic is a coherent, buildable design — not a contradiction).
+- **The one unresolved fork that matters, carried over from Update 8 and still open:** does Paper 2's fleet involve agents whose actions genuinely affect each other at runtime (real CTDE, requiring some resolution of the joint-observation/privacy tension) — or do devices simply train together and act independently (federated RL, mislabeled as MARL if called otherwise)? This determines what Candidate 1's eventual result can actually claim credit for, and must be settled before Paper 2's methodology section is written.
+
+## Corrected, De-Overclaimed Unified Description of Papers 1 + 2
+
+The following consolidates this session's work into one accurate running description (Paper 1 + Paper 2 combined), with the earlier overclaim removed:
+
+> The RL agent maintains a belief state (POMDP) over hidden network conditions, including an explicit zero-day/unknown-attack latent state, updated via a model-based world model combining MMPP (traffic arrival dynamics) with a DL RNN (GRU). PPO updates the policy from this belief. The system is trained in a federated environment across a fleet of heterogeneous IoT devices, whose differing traffic naturally produces non-IID data across clients. Privacy is partial, not absolute: only weights/gradients are shared, raw traffic stays local, but this does not fully rule out information leakage through model updates (gradient inversion / membership inference), and should be stated as such rather than as a full privacy guarantee.
+
+**Explicitly NOT claimed (corrected from an earlier overclaim this session):** that the POMDP/MMPP/PPO architecture *automatically* handles non-IID heterogeneity well. This is restated as **Candidate 1**, an open, testable research question: *does MBRL's sample efficiency reduce the federated non-IID stabilization-time penalty FRL-IPS documents for model-free (DDQN) methods?* — to be tested against FRL-IPS's own measured stabilization-time numbers, not assumed.
+
+## Structural Status: Papers 1 + 2 Near-Settled as the Core; 3rd/4th Contribution Still Open
+
+Papers 1 and 2, as described above, are considered near-accepted as the thesis's technical core. This satisfies two of the advisor's required 3–4 contributions. **The remaining contribution(s) are not yet chosen.** Three candidates currently sit in the document, unassigned to a decided slot:
+
+1. **Candidate 2 — Byzantine-robust belief fusion.** Defends against a fleet device that *lies* about its own existence/compromise belief (as opposed to standard federated defenses, which only guard against poisoned weights). Proposed mechanism: KL-divergence-based downweighting of local beliefs that diverge sharply from fleet consensus. Natural companion to Paper 2 regardless of which identity-robustness result Stage 1 produces — not a replacement for it.
+2. **Candidate 3 — Cross-protocol generalization / lateral movement.** The broader, independently-evidenced gap found in Update 8 (smart-TV-to-Zigbee-lock pivot precedent, the 2026 Z-Wave dataset paper's explicit "no multi-protocol analysis support" finding, BRIDGE/TCH-Net's cross-domain generalization benchmark). Extends the existing MMPP/POMDP spread model across protocol boundaries rather than adding a new pillar. Currently flagged as lower priority / stretch rather than core, pending further scoping.
+3. **Paper 3 — Twin-in-the-loop + interpretable belief states (XAI).** The original main-path idea, already scoped in detail (first section of this document), already has a known differentiation requirement against IDS-agent (OpenReview 2025) on file. Previously assessed as the weakest of the original three mains — worth re-weighing now against Candidates 2 and 3 rather than defaulting to it.
+
+**Status:** none of the three is yet chosen or ruled out. Next step: deep-search Candidate 2 (Byzantine-robust belief fusion) specifically, to establish novelty/evidence the same way Candidate 1, PMB/LMB, and the cross-protocol gap were each checked earlier in this document, before deciding between the three.
+
+## Open Items From This Update
+
+1. Settle the real-CTDE-vs-federated-RL fork (carried from Update 8) before Paper 2's methodology is finalized.
+2. Run a dedicated literature sweep on Candidate 2 (Byzantine-robust belief fusion / lying-device detection via KL-divergence belief downweighting) — search terms to add: "Byzantine robust federated reinforcement learning," "poisoned belief," "lying agent detection consensus," "KL divergence belief fusion security."
+3. Once Candidate 2 is checked, weigh it head-to-head against Candidate 3 and Paper 3 (twin+XAI) to decide the thesis's 3rd (and possible 4th) contribution.
+4. Carry forward all still-open items from Updates 1–8 (Mitchell-et-al.-style full reads, Zigbee dataset verification, 6G dataset search, Stage 1 CICIoT2023 experiment) — none are superseded by this update.
