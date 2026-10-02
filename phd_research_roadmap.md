@@ -837,3 +837,87 @@ Papers 1 and 2, as described above, are considered near-accepted as the thesis's
 2. Run a dedicated literature sweep on Candidate 2 (Byzantine-robust belief fusion / lying-device detection via KL-divergence belief downweighting) — search terms to add: "Byzantine robust federated reinforcement learning," "poisoned belief," "lying agent detection consensus," "KL divergence belief fusion security."
 3. Once Candidate 2 is checked, weigh it head-to-head against Candidate 3 and Paper 3 (twin+XAI) to decide the thesis's 3rd (and possible 4th) contribution.
 4. Carry forward all still-open items from Updates 1–8 (Mitchell-et-al.-style full reads, Zigbee dataset verification, 6G dataset search, Stage 1 CICIoT2023 experiment) — none are superseded by this update.
+
+
+---
+---
+
+# UPDATE 10 — 2 Oct 2026 (replaces any earlier Update 10 draft; everything above is unchanged)
+
+## Candidate 3 (Cross-Protocol Lateral Movement): Closest Prior Work, Corrected Novelty Wording, and Datasets
+
+**Verification levels used below:** READ = full text or abstract seen directly. SECOND-HAND = known only through the Shafi thesis's own summary of it. UNVERIFIED = not found or not checked.
+
+### 1. Closest prior work found (first pass, not a systematic review)
+
+**1a. Shafi, M. (2024), York University MSc thesis — READ (abstract, literature review, synthesis, motivation, start of Sec. 3.2; NOT read: graph construction, dataset chapter, results).**
+*"Intruders' Behavior Unveiled: A Dual-Tier Behavior-driven Model for Malicious Activity Detection in IoT Network Using Graph Learning."* Supervisor: Prof. Arash Habibi Lashkari. https://yorkspace.library.yorku.ca/items/475a57b3-e449-4909-9f95-fb086f5aefd5
+- Dual-tier detector using (i) the hub's internet-facing traffic and (ii) internal device-to-device traffic, with a graph-learning component and threshold-based zero-day detection.
+- Dataset created by the author: 50+ devices, 100+ attack scenarios, five months of capture; Wi-Fi/IP plus Z-Wave (feature tables labeled "IP-based" and "IoT-Zwave-based"). Zigbee not evidenced.
+- **Relation to Candidate 3:** adjacent, not on target. The two tiers appear to be parallel streams combined at the decision step, with no evidence of tracking a compromise crossing a protocol boundary through the hub. Figure captions place IP-based attacks (week 16) and Z-Wave-based attacks (week 20) in separate weeks, which suggests single-protocol attacks and no labeled pivots (inference from captions, not read directly).
+- Its own shortcomings list (Sec. 2.3) includes missing Z-Wave/Zigbee consideration (#3), missing multi-modal data (#7) and missing protocol-specific attacks (#8); it does not list lateral movement or pivoting. Consistent with the gap.
+- **Dataset release status: unknown** (not stated in the portion read). Check the CIC/UNB site and contact the author.
+
+**1b. MS-ZeroWall — abstract READ via search snippets; full text UNVERIFIED. (This is ref [67] in Shafi's thesis; match on VAE + dual-domain + AHMM description is strong.)**
+Li, T., Hong, Z., Feng, W., Yu, L., Wen, Z., *"MS-ZeroWall: Detecting Zero-Day Multi-Step Attack in Smart Home Using VAE and HMM,"* IEEE Transactions on Vehicular Technology, vol. 73, no. 9, pp. 13278–13291, 2024. DOI: 10.1109/TVT.2024.3392793.
+- Lightweight multi-step attack prediction for smart homes: a VAE-based dual-domain strategy (DVAE) for unknown multi-step threats, HMM + VAE to model multi-step attacks automatically, and an aggregated HMM (AHMM) for low-delay prediction.
+- **Why it matters:** it is the closest thing found to sequential, belief-like inference over attack stages in smart homes. It is HMM-based, not POMDP/RL, and I have no evidence it handles protocol boundaries, but any "no sequential state inference for smart-home attack progression" claim is false.
+- **Dataset used: not found.** Needs the full text.
+
+**1c. Ramapatruni, S., Narayanan, S. N., Mittal, S., Joshi, A., Joshi, K. (2019) — READ (abstract) (ref [74] in Shafi's thesis).**
+*"Anomaly Detection Models for Smart Home Security,"* 2019 IEEE 5th Intl. Conf. on Big Data Security on Cloud / HPSC / IDS, pp. 19–24. HMM trained on network-level sensor data from the authors' own smart-home testbed; reported 97% accuracy. Dataset: own testbed; public release not indicated.
+
+**1d. Papers known only through Shafi's summaries (SECOND-HAND; titles/authors/venues UNVERIFIED — look these up from his bibliography):**
+- **GODIT** (Graph-based Outlier Detection in the IoT): represents smart-home traffic as a real-time graph stream with shingling-based graph sketching; evaluated on real smart-home IoT traffic with ARP spoofing, Ping of Death and Smurf attacks (mostly DoS). Dataset not named in the summary.
+- **GCN-Ensemble fusion model** (ref [14]): GCN + deep learning for IoT intrusion detection. Datasets named in the summary: BoT-IoT, ToN-IoT, CIC-IDS2018, NF-UQ-NIDS.
+- **MAGPIE** (ref [23]): described as the first smart-home IDS using reinforcement learning to adapt its anomaly models, using both cyber and physical data sources. Dataset not named in the summary. Needs a full read as the only RL-in-smart-home-IDS precedent found.
+- **Ref [28]** (title/authors not captured): anomaly correlation across network resources, evaluated on simulated Zigbee and WiFi subnetworks. The only cross-subnetwork Zigbee/WiFi correlation precedent found in this pass; simulated only.
+- **Z-IoT** (ref [6]): device-class fingerprinting from packet inter-arrival times on 39 Zigbee and Z-Wave devices, >91% average precision and recall. Relevant to the measurement layer idea in Update 6.
+
+### 2. Corrected novelty wording for Candidate 3
+
+**Do not write:**
+- "No graph learning applied to smart-home hub/IoT traffic" (false: Shafi, GODIT, GCN-based work).
+- "No sequential state inference over multi-step smart-home attacks" (false: MS-ZeroWall, Ramapatruni et al.).
+- "No RL in smart-home intrusion detection" (MAGPIE, pending full read).
+
+**Defensible, pending a systematic sweep:** no work found that (a) models a compromise **crossing a protocol boundary through the hub** (e.g., Wi-Fi device -> hub -> Zigbee/Z-Wave device) as the object of detection, (b) maintains a belief over it that updates over time, and (c) drives graded responses from that belief. Graph methods in this space classify or profile behavior; HMM methods infer attack stages but not boundary-crossing; the RL precedent adapts classifiers rather than reasoning about pivots.
+
+### 3. Datasets
+
+**3a. Newly found and verified: "Smart Home Intrusion Detection Dataset" — multi-stage attacks (READ, full data article).**
+Das, V. & Nair, B. B., *"A novel multi-stage attack dataset for smart home intrusion detection,"* Data in Brief, vol. 66, art. 112770, 2026. DOI: 10.1016/j.dib.2026.112770. Data: Mendeley Data, DOI 10.17632/x95b37z2vy.1 (https://data.mendeley.com/datasets/x95b37z2vy/1). License: CC BY. Plain CSV.
+- 178,831 samples (148,959 train / 29,872 test); normal traffic plus 7 multi-stage attack scenarios generated with MITRE Caldera mapped to ATT&CK tactics (defense evasion, exfiltration, discovery, collection, staging, etc.); 23 flow features; per-target files (Device_1, Device_2, Device_win, Device_all); training and testing captured independently; baseline Random Forest (binary F1 0.927, multiclass accuracy 0.775).
+- **Fit:** good for the *multi-stage / temporal* side (sequential attack stages, MITRE-grounded; a natural testbed for belief-over-stages ideas, and a benchmark against MS-ZeroWall-style methods). **Not** a cross-protocol dataset: Wi-Fi only, attacker inside the LAN.
+- **Limitations that matter for a GNN:** IP addresses and ports were deliberately removed from the tables, so a device communication graph cannot be rebuilt from the CSVs (only coarse per-target grouping); raw filtered PCAP samples are provided only as a subset. No host-level data; imbalanced classes; small device set (about 10).
+
+**3b. Previously listed, still the main candidates for the cross-protocol side:**
+
+| Dataset | Use for Candidate 3 | Status |
+|---|---|---|
+| CICIoT2023 | Main graph basis: 105 devices, 33 attacks, hub-mediated Zigbee/Z-Wave devices (38 behind 5 hubs); free download | Verified earlier; hub-side edges only inferable |
+| CIC IoT Dataset 2022 | Real multi-protocol hub topology (Wi-Fi/Zigbee/Z-Wave via a Vera Plus hub); 48 features, raw pcaps | Attack coverage and labels unchecked |
+| Shafi / York smart-home dataset | Multi-protocol (IP + Z-Wave) benign and attack data, hub + internal traffic | Release status unknown |
+| Song & Lin, Zigbee Dataset for Smart Home and Security Analysis (IEEE Dataport, 2024) | Zigbee plus the IP side (Home Assistant) of the same home | Subscription required; attack labels unknown |
+| ZigBeeNet (Zenodo, 2024) | Zigbee-side topology only, 15 devices, 20 days | Likely benign only |
+
+**3c. Datasets named in the related work (SECOND-HAND, via Shafi's summary of the GCN-Ensemble paper):** BoT-IoT, ToN-IoT, CIC-IDS2018, NF-UQ-NIDS. Flow datasets with IPs, so usable for a *graph-method sanity baseline*, but none has Zigbee/Z-Wave or cross-protocol structure. MS-ZeroWall, GODIT and MAGPIE datasets: UNVERIFIED.
+
+**Bottom line:** still no dataset with labeled cross-protocol pivots. Realistic plan: real benign multi-protocol topology (CICIoT2023, CIC IoT 2022, York if released) + injected, documented pivots, with the Das & Nair data as the real-data benchmark for the multi-stage/temporal component.
+
+### 4. Evaluation protocol (design, not yet built)
+1. **Graph construction:** nodes = devices + hub(s); edges = communications per time window with protocol as an edge attribute; hub as an explicit protocol-boundary node.
+2. **Benign baseline:** learn normal structure from real multi-protocol benign traffic.
+3. **Pivot injection:** insert cross-protocol edges following documented patterns (compromised Wi-Fi device -> hub -> unseen Zigbee/Z-Wave target) with ground-truth labels; vary fan-out, timing, stealth, hop count; keep injection styles held out from training.
+4. **Baselines:** new-edge/new-neighbor heuristic vs. GNN (the "why a GNN" justification), plus an HMM stage-tracker in the style of MS-ZeroWall/Ramapatruni et al. as the sequential-inference baseline.
+5. **Multi-stage benchmark:** run the belief/temporal component on the Das & Nair data against the Random Forest baseline and MS-ZeroWall-style HMM.
+6. **Honest framing:** injected pivots are synthetic evidence on real topology (same simulation-trust category as earlier objections); report sensitivity sweeps; use real held-out data wherever it exists.
+
+### 5. Open items
+1. Read the York thesis Sec. 3.2 onward (graph construction, dataset chapter, results); confirm whether the model is cross-protocol and whether the dataset is public.
+2. Read MS-ZeroWall in full: dataset, whether any protocol boundary is modeled, how its HMM differs from a POMDP belief.
+3. Look up GODIT, the GCN-Ensemble paper, MAGPIE and ref [28] from Shafi's bibliography (titles, authors, datasets).
+4. Download the Das & Nair dataset and confirm whether per-target files allow any usable graph structure.
+5. Check CIC IoT 2022 attack coverage; check whether CICIoT2023 pcaps allow hub-side edge reconstruction.
+6. Run the systematic sweep (IEEE Xplore/ACM DL/Scopus) for: cross-protocol / multi-protocol lateral movement, pivot, hub, Zigbee, Z-Wave, smart home, combined with graph, HMM, POMDP, belief.
+7. Carry forward the GNN-vs-heuristic justification and the GNN-to-POMDP evidence interface from earlier discussion.
