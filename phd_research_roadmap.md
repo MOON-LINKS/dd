@@ -929,7 +929,9 @@ Das, V. & Nair, B. B., *"A novel multi-stage attack dataset for smart home intru
 
 ## Potential Proposal PPT Blueprint (10-13 slides, topic outline only — not drafted content)
 
-Structure requested: Problem → Gaps → Significance of Study → Literature Review window → Contributions → close. Slide 10 is deliberately left showing three undecided candidates rather than a forced single answer — this reflects the actual, evidence-driven state of the roadmap and should not be resolved artificially before the real literature sweep is done.
+Structure requested: Problem → Gaps → Significance of Study → Literature Review window → Contributions → close. Slide 10 deliberately shows the leading pair plus one demoted backup rather than a forced single answer — this reflects the actual, evidence-driven state of the roadmap and should not be resolved further before the real literature sweep is done.
+
+**Leading pairing for the 3rd/4th contribution, corrected this update:** Candidate 3 (cross-protocol lateral-movement belief tracking) + Paper 3 (twin-in-the-loop + belief-state XAI). Candidate 2 (Byzantine-robust belief fusion) is demoted to backup/contingency only — crowded field, real risk of a "just combining existing models" attack, per Update 9's own assessment.
 
 **Slide 1 — Title**
 - Working title (per Update 8), presented as a research direction under review, not a finished thesis
@@ -944,9 +946,9 @@ Structure requested: Problem → Gaps → Significance of Study → Literature R
 **Slide 4 — The Gaps**
 - No work found combines a belief over hidden state + an explicit novelty/zero-day latent state + graded actions, in IoT
 - Federated defense exists but is mostly model-free (DDQN); MBRL's sample-efficiency advantage under non-IID fleets is untested (Candidate 1)
-- Byzantine-robust federated learning defends poisoned *weights*; nothing defends a device lying about its own *belief* (Candidate 2)
 - Enterprise has solved graph-based lateral-movement detection; IoT has not, and no work applies belief-driven RL to protocol-crossing pivots (Candidate 3)
 - IoT IDS explainability exists at the alert level (LLM-narrated); nothing explains belief-state dynamics themselves (Paper 3 / XAI)
+- Byzantine-robust federated learning defends poisoned *weights*, not a device lying about its own *belief* — a real gap, but one already closely approached by existing work (SF-CABD); kept as backup, not a primary gap claim
 
 **Slide 5 — Significance of the Study**
 - Moves IoT defense from "detect and classify" to "believe and act under uncertainty" — a structurally different, more generalizable paradigm
@@ -958,9 +960,9 @@ Structure requested: Problem → Gaps → Significance of Study → Literature R
 - Closest methodological precedent: Hammar & Stadler (POMDP + PPO, OT intrusion response), no zero-day layer
 - Closest zero-day+PPO precedent: Siamese-similarity + PPO IDS, no belief state
 - Closest Paper 2 overlap: Amamou et al. (AINA 2026) — FedProx + GRU + Agentic AI; needs explicit differentiation
-- Closest Byzantine-adjacent work: SF-CABD (Byzantine-robust + non-IID combined) — defends weights, not beliefs
 - Closest lateral-movement work: enterprise GNN-based detection (Rabbani 2024) — not IoT, not belief-driven
 - Closest XAI precedent: IDS-agent (OpenReview 2025) — LLM-narrated alerts, not belief-state dynamics
+- Closest Byzantine-adjacent work (backup only): SF-CABD (Byzantine-robust + non-IID combined) — defends weights, not beliefs
 - One summary comparison table (belief / novelty-state / PPO / domain) across the closest 8-10 papers
 
 **Slide 8 — Contribution 1: Zero-Day-Aware Belief Agent (Paper 1)**
@@ -972,11 +974,11 @@ Structure requested: Problem → Gaps → Significance of Study → Literature R
 - MBRL vs. model-free convergence under non-IID — Candidate 1, explicit open research question, benchmarked against FRL-IPS
 - Status: near-settled, differentiator vs. Amamou et al. prepared
 
-**Slide 10 — Contribution 3/4: Candidates Under Evaluation (deliberately shown undecided)**
-- Byzantine-robust belief fusion (lying device, not lying weights) — crowded field (SF-CABD, fault-tolerant FRL for IoT already close); backup-tier, real risk of a "just combining existing models" attack
-- Cross-protocol lateral-movement belief tracking (GNN + POMDP) — cleanest gap found across all three; requires building and justifying a new model family (GNN), higher build cost
-- Twin-in-the-loop + belief-state XAI (original Paper 3) — self-assessed weakest of the original three mains; needs re-weighing against the two candidates above
-- Status: not yet decided; next step is a dedicated literature sweep before committing
+**Slide 10 — Contribution 3/4: Leading Pair + Backup**
+- **Primary: Cross-protocol lateral-movement belief tracking (Candidate 3)** — GNN + POMDP; cleanest gap found across all candidates checked; requires building and justifying a new model family (GNN), higher build cost than Papers 1-2
+- **Primary: Twin-in-the-loop with belief-state XAI (Paper 3)** — original main-path idea, already scoped; differentiator vs. IDS-agent already on file (belief-state dynamics specifically, not LLM-narrated alerts); self-assessed weakest of the original three mains, worth re-confirming now against stronger literature footing
+- **Backup only: Byzantine-robust belief fusion (Candidate 2)** — demoted from primary pairing; crowded field (SF-CABD, fault-tolerant FRL for IoT already close); real risk of a "you're just combining existing models" attack; held in reserve in case Candidate 3 or Paper 3 falls through under deeper search
+- Status: Candidate 3 + Paper 3 is the working primary pair; final confirmation still pending a dedicated literature sweep on each
 
 **Slide 11 — Evaluation Plan / Methodology Snapshot**
 - Datasets: CICIoT2023 (identity/zero-day), Edge-IIoTset (federated/non-IID)
@@ -984,7 +986,14 @@ Structure requested: Problem → Gaps → Significance of Study → Literature R
 - FRL-IPS's own stabilization-time numbers as the Candidate 1 benchmark to beat
 
 **Slide 12 — Roadmap / Timeline**
-- Paper 1 → Paper 2 → 3rd contribution decision point → validation → writing
+- Paper 1 → Paper 2 → 3rd/4th contribution confirmation → validation → writing
 
 **Slide 13 — Conclusion / Ask**
--
+- What's being asked of the committee today: feedback on the Candidate 3 + Paper 3 pairing specifically, not approval of a finished plan
+
+## Open Items From This Update
+
+1. Dedicated literature sweep to confirm Candidate 3's gap more rigorously (IEEE Xplore/ACM DL/Scopus, not just the general searches run so far)
+2. Re-confirm Paper 3's differentiation against IDS-agent holds up under the same depth of check applied to Candidate 3
+3. Build actual slide content/visuals once both legs of the primary pair are confirmed
+4. Everything from Updates 1-9's open items remains outstanding and unaffected by this correction
