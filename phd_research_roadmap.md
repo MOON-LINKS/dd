@@ -921,3 +921,70 @@ Das, V. & Nair, B. B., *"A novel multi-stage attack dataset for smart home intru
 5. Check CIC IoT 2022 attack coverage; check whether CICIoT2023 pcaps allow hub-side edge reconstruction.
 6. Run the systematic sweep (IEEE Xplore/ACM DL/Scopus) for: cross-protocol / multi-protocol lateral movement, pivot, hub, Zigbee, Z-Wave, smart home, combined with graph, HMM, POMDP, belief.
 7. Carry forward the GNN-vs-heuristic justification and the GNN-to-POMDP evidence interface from earlier discussion.
+
+---
+---
+
+# UPDATE 11 — 5 Oct 2026 (new section only; everything above is unchanged)
+
+## Potential Proposal PPT Blueprint (10-13 slides, topic outline only — not drafted content)
+
+Structure requested: Problem → Gaps → Significance of Study → Literature Review window → Contributions → close. Slide 10 is deliberately left showing three undecided candidates rather than a forced single answer — this reflects the actual, evidence-driven state of the roadmap and should not be resolved artificially before the real literature sweep is done.
+
+**Slide 1 — Title**
+- Working title (per Update 8), presented as a research direction under review, not a finished thesis
+
+**Slides 2–3 — The Problem**
+- IoT devices multiply faster than security keeps pace; most defenses are detection-only, not decision-making
+- Zero-day attacks defeat classification-based detection by definition, no known signature to match
+- Fleet-scale deployments need coordinated defense without centralizing private raw traffic
+- Real-world device identity is unreliable (MAC rotation, hub aggregation, spoofing), yet pipelines assume clean IDs
+- Attackers pivot across protocols (Zigbee/WiFi/5G) through shared hubs, largely unwatched by any single-protocol defense
+
+**Slide 4 — The Gaps**
+- No work found combines a belief over hidden state + an explicit novelty/zero-day latent state + graded actions, in IoT
+- Federated defense exists but is mostly model-free (DDQN); MBRL's sample-efficiency advantage under non-IID fleets is untested (Candidate 1)
+- Byzantine-robust federated learning defends poisoned *weights*; nothing defends a device lying about its own *belief* (Candidate 2)
+- Enterprise has solved graph-based lateral-movement detection; IoT has not, and no work applies belief-driven RL to protocol-crossing pivots (Candidate 3)
+- IoT IDS explainability exists at the alert level (LLM-narrated); nothing explains belief-state dynamics themselves (Paper 3 / XAI)
+
+**Slide 5 — Significance of the Study**
+- Moves IoT defense from "detect and classify" to "believe and act under uncertainty" — a structurally different, more generalizable paradigm
+- Fleet-scale learning without centralizing raw traffic — privacy-relevant at real deployment scale
+- Treats identity ambiguity and protocol-crossing attacks as first-class problems rather than assuming them away
+- Belief-state interpretability gives operators a reason to trust/act on the agent's decisions, not just a black-box alert
+
+**Slides 6–7 — Literature Review Window**
+- Closest methodological precedent: Hammar & Stadler (POMDP + PPO, OT intrusion response), no zero-day layer
+- Closest zero-day+PPO precedent: Siamese-similarity + PPO IDS, no belief state
+- Closest Paper 2 overlap: Amamou et al. (AINA 2026) — FedProx + GRU + Agentic AI; needs explicit differentiation
+- Closest Byzantine-adjacent work: SF-CABD (Byzantine-robust + non-IID combined) — defends weights, not beliefs
+- Closest lateral-movement work: enterprise GNN-based detection (Rabbani 2024) — not IoT, not belief-driven
+- Closest XAI precedent: IDS-agent (OpenReview 2025) — LLM-narrated alerts, not belief-state dynamics
+- One summary comparison table (belief / novelty-state / PPO / domain) across the closest 8-10 papers
+
+**Slide 8 — Contribution 1: Zero-Day-Aware Belief Agent (Paper 1)**
+- POMDP belief + explicit "unknown attack" latent state + MMPP/GRU world model + PPO
+- Status: core technical asset, near-settled
+
+**Slide 9 — Contribution 2: Federated Fleet-Scaling (Paper 2)**
+- Federated (weights, not raw data) sharing across a device fleet
+- MBRL vs. model-free convergence under non-IID — Candidate 1, explicit open research question, benchmarked against FRL-IPS
+- Status: near-settled, differentiator vs. Amamou et al. prepared
+
+**Slide 10 — Contribution 3/4: Candidates Under Evaluation (deliberately shown undecided)**
+- Byzantine-robust belief fusion (lying device, not lying weights) — crowded field (SF-CABD, fault-tolerant FRL for IoT already close); backup-tier, real risk of a "just combining existing models" attack
+- Cross-protocol lateral-movement belief tracking (GNN + POMDP) — cleanest gap found across all three; requires building and justifying a new model family (GNN), higher build cost
+- Twin-in-the-loop + belief-state XAI (original Paper 3) — self-assessed weakest of the original three mains; needs re-weighing against the two candidates above
+- Status: not yet decided; next step is a dedicated literature sweep before committing
+
+**Slide 11 — Evaluation Plan / Methodology Snapshot**
+- Datasets: CICIoT2023 (identity/zero-day), Edge-IIoTset (federated/non-IID)
+- Stage 0/1 go/no-go experiment design for the identity question, with a pre-registered decision rule
+- FRL-IPS's own stabilization-time numbers as the Candidate 1 benchmark to beat
+
+**Slide 12 — Roadmap / Timeline**
+- Paper 1 → Paper 2 → 3rd contribution decision point → validation → writing
+
+**Slide 13 — Conclusion / Ask**
+-
