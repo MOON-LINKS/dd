@@ -1025,3 +1025,67 @@ Structure requested: Problem → Gaps → Significance of Study → Literature R
 **For this thesis:** FedAvg is the baseline to compare against; FedProx is the realistic implementation given known non-IID conditions; FedPPO-PG is the closest reference for federating PPO mechanics specifically (Paper 1's agent is PPO-based, not DDQN like FRL-IPS).
 
 **Implementation note:** Flower (`flwr`) is the library to use — framework-agnostic, wraps an arbitrary local training loop (needed for a PPO/MBRL update step, unlike libraries assuming standard supervised gradient descent), and is the same tool FRL-IPS itself used. Its Simulation Engine runs multiple virtual clients in a single process, suited to Colab prototyping. `flwr-datasets`' `DirichletPartitioner` (alpha parameter controls heterogeneity — lower alpha = more non-IID) gives a ready-made, continuous IID→non-IID sweep for the FRL-IPS-style stabilization-time comparison, rather than needing a hand-built device-type split.
+
+
+
+---
+---
+
+# UPDATE 12 —  (new sections only; everything above is unchanged)
+
+## Section 14 — Deployment Architecture: Three Layers, and Where MBRL/Federation/CTDE Each Apply
+
+**The question that triggered this:** is this built for a single smart home (devices A, B, C), a vendor's fleet across many homes (Home 1, Home 2, ...), or a smart city — and does CTDE help at each scale? Answer: these aren't the same problem at different scales, they're three structurally different layers, and MBRL/federation/CTDE each answer a different one.
+
+### The three layers
+
+| Layer | What it is | Mechanism | Coordination needed? |
+|---|---|---|---|
+| **1 — within one home** | Devices A, B, C on one network/hub; real-time pivot risk between them | MBRL/POMDP/PPO agent(s) — granularity TBD (see below) | **Yes, if per-device agents and devices share a bridge point; no, if a single per-home agent is used** |
+| **2 — vendor fleet across homes** | Home 1, Home 2, ... — same device type, structurally similar but physically independent | Federated RL (independent IPPO instances + FedAvg/FedProx) | No — homes share no infrastructure, nothing to coordinate in real time |
+| **3 — smart city** | Many homes/buildings, possibly multiple vendors | **Hybrid**: MARL/CTDE within adjacency clusters that share infrastructure + federated RL across clusters that don't | **Depends on shared infrastructure, not on scale** (see decision rule below) |
+
+### MBRL's role
+
+MBRL is fundamentally a **Layer 1** concept — it's about how one agent learns efficiently from its own local world model (the GRU). It doesn't change shape across layers; it's the thing running locally at whichever granularity is chosen. It does not, by itself, decide whether coordination across agents is needed — that's a separate question, answered below.
+
+**Open granularity decision (not yet resolved):** per-device agents (one GRU/POMDP/PPO per physical device) vs. per-home agents (one agent observing/acting across all devices in a home via a joint feature vector). Per-home is simpler (no multi-agent machinery, single bigger observation/action space). Per-device matches Paper 1's original framing more directly but only pays off if real-time cross-device coordination (CTDE) is actually used — otherwise it's unnecessary complexity. **This decision determines whether CTDE is relevant at Layer 1 at all**, and should be made explicitly rather than left implicit.
+
+### The decision rule for when coordination (CTDE/MARL) is justified
+
+Not a function of scale. Coordination is justified when, and only when, entities:
+1. **Share infrastructure an attacker could pivot through**, and/or
+2. **Face infection/attack spread faster than a federated round-trip could catch** (federated aggregation happens in rounds; real-time coordination doesn't wait for a round).
+
+If neither holds, independent federated clients are sufficient and cheaper — CTDE's centralized-critic cost isn't justified by scale alone, and doesn't scale cleanly to thousands of agents regardless.
+
+### Layer 3 (smart city), corrected
+
+Initial framing treated Layer 3 as uniformly federated-only, reasoning by analogy to Layer 2 (independent homes). **This was wrong** — it implicitly assumed city-scale entities are as mutually isolated as separate vendor-fleet households, which is usually false: city entities commonly share real infrastructure (municipal WiFi mesh, neighborhood 5G cell/RSU, shared substation), which is a genuine pivot point by the decision rule above.
+
+**Corrected architecture:** hierarchical, not flat — **MARL/CTDE nested inside each adjacency cluster** (entities sharing a gateway/substation/mesh), **federated aggregation across clusters** that share no infrastructure. This is also a practical necessity: clustering by shared infrastructure is what keeps the coordinated (CTDE) portion computationally tractable, since a single centralized critic cannot scale to city-wide agent counts directly.
+
+---
+
+## Section 15 — Cross-Protocol Lateral Movement Is the Concrete Justification for CTDE/MARL
+
+**Not a separate idea from the architecture above — it's the mechanism that activates the CTDE branch of Section 14's decision rule.**
+
+Checking the cross-protocol scenario (WiFi camera compromised → shared hub bridges WiFi/Zigbee → attacker reaches a Zigbee lock never directly internet-reachable) against the two-part decision rule:
+- **Shared infrastructure?** Yes — the hub is exactly that.
+- **Real-time pivot risk?** Yes — the attack is one continuous sequence, not spread over a timescale a federated round could catch.
+
+This is the textbook case the decision rule describes. **Without a scenario like this, "why pay for CTDE instead of pure federated agents everywhere" has no good answer — cross-protocol pivoting is that answer.**
+
+**Important scope limit — this does not mean CTDE applies broadly:**
+1. **Protocol-specific measurement models** (Zigbee vs. WiFi/TCP feature extraction) are a feature-engineering problem, needed regardless of coordination scheme — not itself a CTDE question.
+2. **Graph-structured belief propagation across the bridge point** (a WiFi-segment device's rising compromise probability should influence the Zigbee-segment belief in real time) — this *is* the CTDE-relevant part, and it applies **only within one hub's/cluster's reach**.
+
+Two homes, each with their own independent hub, do not need real-time coordination *with each other* — Home 1's camera-to-lock pivot has no effect on Home 2, since they share no bridging infrastructure. Across homes: still federated RL, consistent with Layer 2/Section 14.
+
+**One-line defense framing:** *"Cross-protocol pivoting is why coordination is needed at all — it's not an academic add-on, it's the specific attack that makes a purely federated, non-coordinating design insufficient."*
+
+### Open items from this update
+1. Resolve the per-device vs. per-home agent granularity decision (Section 14) — this also finally settles whether "CTDE" belongs in the thesis title, an open question since early in this roadmap.
+2. Define the adjacency-clustering criterion concretely for the smart-city case (what counts as "shared infrastructure" — same hub? same gateway? same subnet?) before this becomes experimental design.
+3. This remains architectural reasoning, not yet validated against data or a simulation — no experiment has tested whether round-trip federated aggregation is actually too slow to catch a real cross-protocol pivot; that latency comparison is itself a testable future experiment, not yet designed.
