@@ -1706,3 +1706,63 @@ Detection-delay sweep (29 min pivot, hub-local): detection median 10 s / 60 s / 
 6. Database novelty sweep (IEEE Xplore, ACM DL, Scopus): needs library access; query strings can be prepared.
 7. Check Paper 1 factorable-observation checklist before design freeze.
 8. Revise PPT Slide 10 to Believe -> Scale -> Coordinate.
+
+
+# UPDATE 18 — 8 Oct 2026 (new section only; everything above is unchanged)
+
+## Novelty Sweep: Belief-Driven MBRL + PPO/BF-PPO in Federated Non-IID IoT, and Cross-Protocol MARL
+
+**Status:** first-pass web sweep (about 9 searches, including a targeted MBRL query), not an IEEE Xplore/ACM/Scopus database sweep. Verification levels: READ = abstract or snippet seen; UNVERIFIED = not checked. Nothing below was read in full text. "Not found" means not found in these searches, not "does not exist".
+
+## 1. Question asked
+Is there prior work combining: (a) model-based RL (world model), (b) PPO or BF-PPO, (c) POMDP belief with an explicit unknown/zero-day attack state, (d) federated non-IID training, for IoT? And as extension: (e) cross-protocol defense, (f) comparison with MARL?
+
+## 2. Headline
+**No single paper found combining (a)+(b)+(c)+(d) in security.** Several papers cover two or three legs. The MBRL leg needs a nuanced statement (see section 4): federated model-based RL exists in general RL, but none was found in security.
+
+## 3. Closest-work table (abstract/snippet level; UNVERIFIED beyond that)
+
+| Work | Belief / POMDP | PPO | Model-based | Zero-day / novelty | Federated | non-IID | Gap versus this thesis |
+|---|---|---|---|---|---|---|---|
+| Q-BIRD (V2X cyber defense, arXiv 2606.07796) | Yes (belief over attacker intent, fed to PPO) | Yes | No | No (intent, not novelty) | No | No | Closest on belief + PPO; V2X; single agent; no world model |
+| Hammar & Stadler (OT intrusion response; BF-PPO) | Yes | Yes | No | No | No | No | Closest method for Paper 1; OT domain (from earlier roadmap, not re-verified) |
+| FedAtten-DRL (IoT NIDS, ACM) | No | Yes | No | Yes (aims at zero-day) | Yes | Not clear from abstract | Closest federated + PPO + zero-day; detection-style DRL; no belief, no world model |
+| Siamese + PPO zero-day IDS (arXiv 2609.26115; ScienceDirect) | No | Yes (PPO over DQN/SAC) | No | Yes | No | No | Main "zero-day + PPO" overlap; no belief, not federated |
+| FMARL intrusion detection (Comput. Commun. 2026) | No | No (DQN) | No | Not the focus | Yes (class-level FedAvg) | Yes | Classification framing; one agent per attack type + decision agent |
+| FMADRL moving-target defense, UAV swarms (arXiv 2506.07392) | Yes (multi-agent POMDP) | Policy gradient | No | No (DoS) | Yes (reward-weighted aggregation) | Not clear | Federated multi-agent POMDP defense exists; not IoT zero-day; no world model |
+| Trust-aware DQN for FL defense (arXiv 2510.01261) | Yes (client trust as latent state) | No (DQN) | No | No | Defends FL itself | n/a | POMDP over client trust; relevant to Candidate 2, not Paper 1/2 |
+| Fed-DTCN, Jogunola et al., Belarbi et al. | No | No | No | Yes | Yes | Yes | Federate detectors, not decision policies; one study reports large non-IID performance drops |
+| FRL-IPS (from roadmap) | No | No (DDQN) | No | No | Yes | Yes (IID vs non-IID) | Benchmark for Candidate 1 stabilization time |
+| Federated Ensemble Model-based RL (general RL, not security) | No | n/a | Yes (federated dynamics-model ensemble, policy trained on the model) | No | Yes | Heterogeneous users | Shows federated MBRL sample-efficiency idea exists outside security |
+| FedHPD / Federated RL across heterogeneous environments (general RL) | No | n/a | No | No | Yes | Heterogeneous agents/environments | General FedRL theory and heterogeneity results to cite |
+| Amamou et al., AINA 2026 | ? (abstract: none mentioned) | ? | ? | ? | Yes (FedProx) | ? | Abstract only; full text unread; see earlier note |
+
+## 4. What this means for each claim
+- **Paper 1 (belief + PPO + novelty state):** Q-BIRD and Hammar & Stadler cover belief + PPO; Siamese+PPO and FedAtten-DRL cover zero-day + PPO. The explicit unknown-attack latent state inside the belief, combined with a GRU/MMPP world model, was not found together. Differentiator stands, still unconfirmed by a database sweep.
+- **Paper 2 / Candidate 1 (MBRL vs model-free under federated non-IID):** the general idea "federated + model-based RL improves sample efficiency" already exists (Federated Ensemble Model-based RL, continuous-control benchmarks). **Do not claim "first federated MBRL".** Defensible narrower claim: first test (if the sweep confirms) of whether model-based learning reduces the federated non-IID stabilization penalty for a belief-driven security agent, benchmarked against FRL-IPS. Read that paper's theory/experiments and cite it as the general-RL precedent.
+- **Federated + POMDP defense:** FMADRL (UAV MTD) shows federated multi-agent POMDP defense is publishable. Position Paper 2 around the belief with novelty state and the MBRL/non-IID question, not around federated POMDP alone.
+- **FedAtten-DRL and RL-IoTIDS:** RL-IoTIDS (single DQN IDS) names federated RL as future work, so the topic is open for decision-making agents, but FedAtten-DRL is already a federated DRL zero-day IDS and must be differentiated explicitly (no belief state, no world model, detection/classification framing).
+
+## 5. Extension: cross-protocol defense and MARL
+- No paper found applying MARL (or federated MARL) to hub-mediated cross-protocol pivots in IoT security.
+- What exists: MARL in cybersecurity survey (lateral-movement containment in enterprise networks and cyber gyms); cross-tier MARL anti-jamming across FANET-IoT-IoV (jamming, not pivots; agents include IoT gateways); a multi-agent SDN-IoT defense whose agents are trained independently (explicitly not centralized MARL); H-MARL on CAGE-4 (simulated enterprise); Andreou et al. cross-slice CTDE defense (from the earlier roadmap).
+- Narrower novelty wording (unchanged in spirit from Update 16): no work found combining MARL, security, and hub-mediated cross-protocol pivots.
+- **Federated MARL comparison arm:** FMARL (Comput. Commun. 2026) and FMADRL (UAV) are the nearest federated-multi-agent baselines to cite; neither addresses protocol boundaries.
+
+## 6. Do-not-claim list (added)
+- "First federated RL for IoT zero-day" (FedAtten-DRL).
+- "First belief-conditioned PPO in cyber defense" (Q-BIRD, Hammar & Stadler).
+- "First federated multi-agent POMDP defense" (FMADRL, UAV).
+- "First federated model-based RL" (Federated Ensemble Model-based RL, general RL).
+
+## 7. Limits and open items
+1. Snippet-level only; none of the table rows were read in full. FedAtten-DRL, Q-BIRD, FMADRL and Federated Ensemble MBRL should be read first.
+2. Run the database sweep with these strings (IEEE Xplore, ACM DL, Scopus):
+   - ("model-based" OR "world model") AND ("federated") AND ("reinforcement learning") AND (intrusion OR "cyber defense" OR IoT)
+   - ("POMDP" OR "belief state") AND ("federated") AND (intrusion OR "cyber defense" OR IoT) AND (PPO OR "policy gradient")
+   - ("zero-day" OR "unknown attack" OR "novel attack") AND ("federated reinforcement learning") AND (IoT OR IIoT)
+   - ("multi-agent reinforcement learning" OR MARL OR CTDE) AND ("lateral movement" OR pivot) AND (IoT OR "smart home" OR Zigbee OR "multi-protocol")
+   - ("federated") AND ("multi-agent reinforcement learning") AND (intrusion OR "cyber defense") AND ("non-IID")
+3. Re-check Amamou et al. full text for RL or belief components (their group also published Big-IDS, decentralized MARL).
+4. Update the comparison table in Update 1 and the PPT literature slide with Q-BIRD, FedAtten-DRL, FMARL, FMADRL and Federated Ensemble MBRL.
+5. Carry forward all open items from Updates 1 to 17.
