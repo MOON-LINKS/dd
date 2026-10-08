@@ -1616,3 +1616,93 @@ About 8/10 for the whole three-paper path (my judgment, not a measurement). It w
 9. Verify all (verify) items and the related-work table against full text.
 10. Carry forward all open items from Updates 1 to 15.
 
+# UPDATE 17 — 8 Oct 2026 (new section only; everything above is unchanged)
+
+## Paper 3 claim narrowed: the price of separation
+
+**Status:** working draft. Items marked (verify) rest on press releases or snippets, not full text.
+
+**Trigger:** pilot with hand-built threshold policies (one tuning seed) showed a factored single agent (A1) is the ceiling for per-protocol agents with belief sharing (A3) inside one box. Same function class at zero delay and loss, so A3 cannot beat A1 there.
+
+**Old claim (dropped):** A3 beats a single per-home agent.
+**New claim:** separation has a price (belief-channel delay and loss). Paper 3 maps where that price is small (crossover map), gives a method for operating where separation is forced, and releases a cross-protocol pivot benchmark.
+
+### Revised research questions
+- RQ1: under what pivot speed, detection delay and message delay/loss does per-protocol sharing stay close to A1, and when does it collapse toward independence (A2)?
+- RQ2 (replaces old RQ2): what is the cost of physical separation, loss(A3) - loss(A1), as a function of pivot speed, channel delay, loss pattern, coordinator compute and action authority? Where does it approach zero?
+- RQ3: when separation is forced, which belief-sharing designs (message content, rate, staleness handling) minimize that cost?
+- RQ4: does the crossover map survive learned policies (IPPO/MAPPO) and measured timings?
+
+### Revised decision rules
+- A3 within a small margin of A1 across realistic delay/loss: separation is cheap; method validated for physically separate deployments.
+- A3 degrades toward A2 at fast pivots with realistic delay: report the boundary; recommend A1 wherever one box can host everything.
+- A3 beats A1 only under a physical constraint (smaller model on coordinator, bursty loss, restricted action authority): the only claimable multi-agent advantage; state the constraint.
+- Federated matches everything for slow pivots: honest negative for coordination; benchmark and latency finding survive.
+
+## Pivot-delay evidence (first sourcing; none is IoT-specific)
+
+| Source | Figure | Caveat |
+|---|---|---|
+| CrowdStrike 2026 Global Threat Report (Feb 2026), press release | Average eCrime breakout time (initial access to lateral movement) 29 min in 2025, down from 48 min in 2024; fastest observed 27 s | Enterprise intrusions, not IoT hubs; vendor telemetry; press release, not full report (verify) |
+| Fastly blog on IoT threats (2017) | Infected/exposed IoT device launched an attack within about 6 min of exposure; probed about 800 times per hour | Vendor blog, honeypot-style measurement; exposure-to-attack, not hub pivot |
+| Antonakakis et al., "Understanding the Mirai Botnet" (USENIX Security 2017) | Mirai scanning/infection mechanics and growth | Abstract/snippet seen only; no per-pivot timing extracted (verify) |
+
+**Reading:** pivot speed spans seconds (automated, scripted) to tens of minutes (average human-operated). No source gives hub-mediated Wi-Fi-to-Zigbee pivot timing. That number remains an assumption; the threat model must state it as a scenario parameter, not a fact.
+
+## Latency test, recalibrated (script: latency_pivot_calibrated.py; Monte Carlo, seed 42, N = 200,000)
+
+Same structure as Section 11 (Wi-Fi detection median 10 s, Zigbee action median 1 s, hub link 70 ms, cloud 300 ms, federated = wait for next 1 h round + 60 s). Pivot delay lognormal; medians anchored on the sourced figures above. Prevention rate:
+
+| Median pivot delay | Federated (1 h round) | Hub-local | Cloud |
+|---|---|---|---|
+| 27 s (fastest breakout), sigma 1.0 | 0.00 | 0.78 | 0.78 |
+| 2 min | 0.04 | 0.98 | 0.98 |
+| 29 min (average eCrime), sigma 1.0 | 0.53 | 1.00 | 1.00 |
+| 1 h | 0.75 | 1.00 | 1.00 |
+| 6 h | 0.99 | 1.00 | 1.00 |
+
+Bursty loss (hub-local, retry every 5 s, 27 s pivot): loss 0 / 0.3 / 0.6 / 0.9 gives 0.79 / 0.74 / 0.65 / 0.36. At a 29 min pivot, loss does not matter.
+Detection-delay sweep (29 min pivot, hub-local): detection median 10 s / 60 s / 300 s / 900 s / 1800 s gives 1.00 / 1.00 / 0.94 / 0.72 / 0.49.
+
+**Findings**
+1. Even at the 29 min average, a 1 h federated round misses about half of pivots; real-time sharing is justified for anything faster than hours.
+2. Hub-local and cloud are indistinguishable on latency; the case against cloud is privacy/bandwidth, not speed.
+3. The price of separation (delay, loss) only bites for pivots in the seconds range. At the 29 min average it is negligible, which supports the narrowed claim: separation is cheap except against automated fast pivots.
+4. Detection delay remains the dominant term; it ties Paper 3 to Paper 1's detection speed.
+
+**Limits:** pivot-delay distributions come from enterprise data and are anchors, not IoT measurements; all component timings are still assumed; this is a timing model, not learned MARL.
+
+# Threat model (one page, draft for the proposal)
+
+**Scope:** a home (or small site) with one hub bridging Wi-Fi and Zigbee/Z-Wave segments; Paper 3 agents sit per protocol segment.
+
+**Attacker goal:** reach a protected downstream device (for example a Zigbee lock) that is not directly internet-reachable, by compromising an upstream Wi-Fi device and pivoting through the hub.
+
+**Attacker capability (scenarios, not facts):**
+- S1 automated: scripted pivot, median pivot delay seconds (anchor: 27 s fastest breakout).
+- S2 human-operated: median pivot delay tens of minutes (anchor: 29 min average).
+- S3 slow/stealthy: hours; low-and-slow behavior to stay under detector thresholds.
+
+**Attacker knowledge:** knows device inventory and hub topology; does not know policy parameters or thresholds (S1/S2). S3 variant may probe the detector's response.
+
+**Attacker can:** compromise one upstream device via a known or novel (zero-day) exploit; send protocol-valid commands through the hub; mimic benign traffic statistics for the compromised device.
+
+**Attacker cannot (assumed):** physically access the hub; break the hub-local channel's authentication; compromise the agents themselves in the core experiments.
+
+**Out of scope for core papers (stated as extensions):** attacks on the belief-sharing channel (message injection, replay, suppression, jamming) and poisoning of training. Byzantine-robust belief fusion is the backup contribution that would address these.
+
+**Defender assumptions:** agents see only their own segment plus shared beliefs; belief messages carry per-segment compromise probability, novelty belief, confidence and bridge-dependency flag; actions per segment are protocol-specific (Zigbee key rotation or blocked joins; Wi-Fi flow rules or isolation) and mapping from policy output to these actions is still undefined.
+
+**Success metrics:** containment before the downstream compromise, time to contain, false isolation rate, communication cost.
+
+**Known weak points:** pivot timing in IoT is unmeasured; injected pivots are synthetic evidence on real benign topology; the evasion-resistance of belief sharing is untested.
+
+# Remaining open items
+1. Source IoT- or hub-specific pivot timing (smart-home attack papers, Mirai-variant propagation studies, lab measurements); if none, measure in a testbed.
+2. Replace assumed component timings with measured ones (GRU inference on Pi-class hardware; hub LAN latency; Zigbee action times).
+3. Pilot with physical-separation parameters: smaller coordinator model, bursty loss, restricted action authority.
+4. Repeat the pilot with learned policies (IPPO/MAPPO), multiple seeds, grid-edge checks.
+5. Define policy-to-protocol action mapping and reward/cost model.
+6. Database novelty sweep (IEEE Xplore, ACM DL, Scopus): needs library access; query strings can be prepared.
+7. Check Paper 1 factorable-observation checklist before design freeze.
+8. Revise PPT Slide 10 to Believe -> Scale -> Coordinate.
