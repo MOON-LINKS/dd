@@ -1412,3 +1412,207 @@ Instead of "the system is private," use:
 - [ ] A short note records which segments Paper 1 actually populates (likely Wi-Fi plus hub-mediated Zigbee/Z-Wave, since CICIoT2023 covers those, and 5G is a later extension)
 
 **Related risks this note does not solve:** how a policy decision maps to protocol-specific actions, where the agent runs (device, hub, cloud), and whether federated weights can initialize Paper 3's per-protocol agents. See Update 15's open items.
+
+
+
+---
+---
+
+# UPDATE 16 — 8 Oct 2026 (new section only; everything above is unchanged)
+
+## Paper 3, Redrafted: Method + Comparison + Simulation Benchmark for Cross-Protocol Defense
+
+**Status:** working draft for further study, not a final decision. Items marked (verify) rest on snippet-level searches or background knowledge and were not checked against full text. Items marked (suggestion) are my additions.
+
+### 1. What changed
+
+Old Paper 3 framings (twin + XAI; "MARL because cross-protocol exists") are replaced. New Paper 3 has three parts that must all be present:
+1. **Method:** a cross-protocol belief-sharing defense with one agent per protocol segment inside a home.
+2. **Comparison:** that method against Paper 2's per-home federated RL agent and against a single factored agent, on accuracy, speed, scale and communication.
+3. **Simulation benchmark:** documented cross-protocol pivot environments built on real benign topology, released as a citable artifact.
+
+**Why not comparison only:** a bare result like "MARL wins when pivots exist, federated RL wins when homes are independent" nearly restates the Update 9 decision rule and reads as confirming the obvious. The contribution must be a **crossover map** (where exactly the winner flips) plus a **proposed method**, with the benchmark as a by-product.
+
+**Dependency:** Paper 2's agent is now a baseline in Paper 3, not a prerequisite. This softens the Paper 2 → Paper 3 chain.
+
+### 2. Research questions
+
+- **RQ1:** Under what conditions (pivot speed, detection delay, number of segments, communication loss) does per-protocol multi-agent belief sharing beat a single per-home agent?
+- **RQ2:** Does a single factored agent (one agent, per-segment slots) match the multi-agent design? If yes, where does separation still pay?
+- **RQ3:** What do accuracy, speed, scale and communication cost look like as segments and homes grow?
+
+### 3. Arms to compare
+
+| Arm | Description | Role |
+|---|---|---|
+| **A0** | Paper 2's per-home federated agent (flat or slotted observation) | Baseline from Paper 2 |
+| **A1** | One factored agent per home (per-segment observation/action slots, one policy) | The obvious challenge to splitting by protocol; **must be included** |
+| **A2** | Per-protocol agents, no communication (independent) | Floor; isolates the value of sharing |
+| **A3** | Per-protocol agents with belief sharing, CTDE-trained (proposed method) | Proposed |
+| **A4** | Cloud streaming reference (optional) | Latency comparison only; gives up the privacy/bandwidth reasons for federation |
+
+All arms federate across homes. The difference is only inside the home.
+
+### 4. Proposed method (A3)
+
+- One agent per protocol segment (Wi-Fi, Zigbee/Z-Wave, 5G where data exists). Say "protocol segment" or "pipeline", not "port".
+- **Protocol-specific feature extractors** feed a common anomaly signal into a shared belief/policy core.
+- **Training:** centralized critic on the home hub during training (MAPPO-style CTDE). **Execution:** decentralized.
+- **Important:** CTDE execution is decentralized, so real-time sharing needs an **explicit belief-sharing channel** (message: per-segment compromise probability, novelty/unknown-attack belief, confidence, bridge-dependency flag). CTDE alone does not provide it.
+- **Cross-segment propagation:** a segment's rising compromise belief should raise the belief of segments sharing a bridge (hub). Whether a GNN is needed stays optional: start without it; add only if a simple new-neighbor heuristic baseline performs poorly (Q4 from Update 13).
+- **Action mapping per segment is still unspecified** (e.g. Zigbee key rotation or blocked joins vs. Wi-Fi flow rules). Must be defined before any simulation.
+
+### 5. Why separate agents rather than one factored policy (must be defended explicitly)
+
+If one hub runs everything, protocol agents see the same data over a very fast local link, so one factored agent could do the same job with less complexity. Separation is justified only where something real separates the segments:
+1. **Different boxes or owners:** Wi-Fi access point, Zigbee coordinator and 5G modem are often separate devices, sometimes from different vendors, with no shared memory.
+2. **Different action authority:** only the Zigbee side rotates Zigbee keys; only the Wi-Fi side changes flow rules.
+3. **Compute limits:** a small coordinator may not run the full model.
+
+**Treat this as an ablation (A1 vs. A3), not a premise.** If A1 wins, report it and limit the multi-agent claim to deployments where separation is physical.
+
+### 6. Environments (fix before running; publish)
+
+Choose environments by varying what the decision rule depends on, not arbitrarily:
+
+| Env | Setup | Expected (hypothesis, not result) |
+|---|---|---|
+| **E1** | Independent homes, no shared hub | Federated per-home agent does fine; coordination adds cost |
+| **E2** | One hub, fast pivots | Belief sharing helps |
+| **E3** | One hub, slow pivots | Federation may suffice (latency test) |
+| **E4** | Shared neighborhood gateway across homes | Hierarchical case (Update 9) |
+| **E5 (optional)** | 5G leg | Weakest on data; extension only |
+
+Parameters to sweep: pivot speed, Wi-Fi detection delay, segments per home, devices per segment, bridge sharing, in-home message delay and loss, attacker type.
+
+### 7. Metrics
+
+| Axis | Measures |
+|---|---|
+| Accuracy | Containment success, detection, **false isolation rate** |
+| Speed | Time to contain; time-to-warn on the downstream segment; training time to stabilize (define the unit: rounds, episodes or environment steps; check FRL-IPS) |
+| Scale | Agents and segments; critic cost growth; per-agent inference time on target hardware |
+| Communication | Federated bytes per round; in-home belief bytes; total to stabilize |
+
+Include a **centralized baseline** to show what federation costs.
+
+### 8. Fairness protocol (lessons from earlier updates)
+
+- Equal tuning budget, same observation information, same compute for every arm. MARL has more parameters and a centralized critic, so unequal tuning would bias results.
+- **Grid-edge check on every tuned parameter.** The earlier PMB tuning stopped at the edge of its grid (birth_var 4.0 while the true plateau was near 24). Widen until the winner sits inside the range.
+- Separate tuning seeds from evaluation seeds; report mean and spread over many seeds.
+- Pre-register hypotheses and the decision rules below before running.
+
+### 9. Decision rules (suggestion)
+
+- **A3 clearly beats A1 and A0 in E2, and A0 matches it in E1/E3:** report the crossover map; the multi-agent claim stands where pivots are fast and the hub is shared.
+- **A1 matches A3 everywhere:** report that; scope multi-agent to physically separated deployments; contribution becomes the benchmark and crossover map.
+- **Neither beats A0 anywhere:** report as a negative result; Paper 3 reduces to the benchmark and the latency finding.
+
+### 10. Simulation and data design
+
+- **No dataset with labeled cross-protocol pivots was found** (Z-Wave dataset review, 2026, lists lack of multi-protocol analysis support as a shortcoming; BRIDGE/TCH-Net shows cross-domain generalization is weak, mean LODO F1 about 0.56; both verify).
+- Plan: real benign multi-protocol topology (CICIoT2023; CIC IoT 2022) plus **injected, documented pivots**. State plainly that injected pivots are synthetic evidence on real topology.
+- **Calibrate the MMPP/traffic model against real traces** (the earlier simulator-trust rejection still applies); validate on held-out injection styles and, where possible, real held-out attacks.
+- CICIoT2023 covers Wi-Fi plus Zigbee/Z-Wave devices behind hubs, not true radio-layer data. 5G-NIDD is a separate dataset with no co-located devices, so the 5G agent stays an extension with synthetic or cross-dataset evidence.
+- The pivot-injection protocol and environments are themselves a citable benchmark artifact.
+
+### 11. Latency kill test — first result (notebook: `latency_kill_test.ipynb`)
+
+**What it is:** a Monte Carlo timing model (seed 42, N = 20,000), not a measurement of real systems. Assumed parameters: pivot delay lognormal (sigma 1.0), Wi-Fi detection median 10 s (sigma 0.5), Zigbee action median 1 s, Zigbee own-detection median 10 s, hub link median 70 ms, cloud median 300 ms, federated = wait until next round plus 60 s processing.
+
+**Prevention rate (fraction of pivots where the downstream protective action is in place before the attacker lands):**
+
+| Median pivot delay | Federated, 1 h round (best case) | Federated, 24 h round | Hub-local sharing | Cloud streaming |
+|---|---|---|---|---|
+| 10 s | 0.00 | 0.00 | 0.45 | 0.44 |
+| 30 s | 0.00 | 0.00 | 0.81 | 0.80 |
+| 60 s | 0.01 | 0.00 | 0.94 | 0.94 |
+| 1 h | 0.75 | 0.07 | 1.00 | 1.00 |
+| 6 h | 0.99 | 0.34 | 1.00 | 1.00 |
+| 24 h | 1.00 | 0.77 | 1.00 | 1.00 |
+
+Independent agents: 0 prevention by construction (floor, not a finding).
+
+**Sensitivity (pivot median 30 s, hub-local):** Wi-Fi detection median 2 s → 0.98; 10 s → 0.82; 20 s → 0.62; 40 s → 0.39; 80 s → 0.18.
+
+**Findings:**
+1. Federated is too slow for fast pivots but adequate for slow ones. If real pivots take hours, the latency argument for coordination weakens.
+2. Hub-local and cloud are nearly identical: link latency is negligible next to detection delay. The test supports needing **a real-time channel**, not MARL/CTDE specifically, and does not separate hub-local from cloud on latency (that separation rests on privacy and bandwidth).
+3. **Detection delay is the real bottleneck**, which ties Paper 3 directly to Paper 1's detection speed.
+
+**Limits:** the pivot-delay distribution is an assumption with no sourced data; the federated row is generous (weight averaging does not carry a live alert); all timings must be replaced with measured values (inference time on target hardware, real hub LAN latency, real action times).
+
+### 12. Threat model (must be written; decides E2 vs. E3)
+
+Attacker type sets pivot speed: automated malware may pivot in seconds; human-operated intrusions can take far longer (no sourced numbers yet). State attacker capability, knowledge and goals as one explicit section, including whether the attacker can observe or evade the belief-sharing channel (adversarial robustness of the shared beliefs is untested; Byzantine-robust fusion remains a backup).
+
+### 13. Q1 decision recap and design constraint
+
+- Paper 1: one agent per home. Paper 2: each home is one federated client. Paper 3: each home's agent split per protocol segment.
+- **Paper 1 must be built factorable:** fixed named segment slots with a presence mask, separate per-segment feature extractors feeding a shared core, and a factorable action layout. Otherwise Paper 3 means redoing Paper 1's design. Check before design freeze.
+- Federated per-home weights do not transfer directly to per-protocol agents (different observation/action spaces). Options: initialize each segment encoder from the matching slice of the federated model, or train from Paper 1's features. Treat federated initialization as an ablation.
+
+### 14. Heterogeneity vs. non-IID (clarification)
+
+Heterogeneity is the cause; non-IID is the statistical effect.
+- **Device** heterogeneity → feature skew, quantity skew. **Traffic** heterogeneity → label skew, temporal drift. Both are standard non-IID (Paper 2; FedAvg/FedProx apply).
+- **Protocol** heterogeneity is not just non-IID: features differ in kind, so clients may not share an input format. It needs protocol-specific feature extraction, not FedProx (Paper 3).
+- **System** heterogeneity (compute, memory, bandwidth) causes stragglers and dropped rounds, a separate issue.
+- Flower's `DirichletPartitioner` splits by a label column, so it produces label skew only. Feature skew from device type must be built from device identifiers. Combine both for a stronger design.
+- In the thesis, define each kind of "heterogeneous" at first use. "Heterogeneous networks" also means HetNets in telecom.
+
+### 15. Related work found (snippet-level searches; verify before citing)
+
+| Work | Relevance | Gap versus Paper 3 |
+|---|---|---|
+| Andreou et al. (2025), CTDE multi-agent moving target defense against cross-slice lateral movement in 6G NFV/SDN | **Closest** on CTDE + lateral movement across a boundary | Virtual network slices, not heterogeneous IoT protocols |
+| Landolt et al. (2025), MARL in cybersecurity survey | MARL for lateral movement containment is established | Enterprise-style networks, cyber gyms |
+| HAMARL (2025) | Hierarchical adversarially resilient MARL for CPS security | Industrial CPS; no protocol-boundary pivoting |
+| MARL on multi-protocol gateways (NSF PAR) and multi-protocol federated matching | Precedent for gateway-as-agent architecture | Spectrum access and data collection, not security |
+| RESTRAIN | Attack/defense MARL in trigger-action IoT, defense actions pass through the hub | Rule-injection attacks, not protocol pivots |
+| Decentralized MARL intrusion detection for IoT (2023) | Inter-agent communication for IoT IDS | Single-domain detection |
+| RL adaptive Zigbee key rotation | Zigbee-side RL actions are a real target | One protocol, single agent |
+| GAZETA (IEEE TIFS) | Game-theoretic zero-trust authentication vs. lateral movement in 5G IoT | Game theory, not MARL (title only; unread) |
+
+**Narrower novelty claim:** no work found combining MARL, security, and hub-mediated cross-protocol pivots. Based on two snippet-level web searches, not an IEEE Xplore/ACM/Scopus sweep.
+**Correction to Update 13:** its sentence citing H-MARL on CAGE-4 as CTDE for IoT defense is inaccurate (CAGE-4 is simulated enterprise defense, not IoT). Andreou et al. is the better citation.
+
+### 16. Likely committee questions on Paper 3
+
+| Question | Prepared answer |
+|---|---|
+| Why not one agent with a factored policy? | Arm A1 tests it directly; separate agents are claimed only where segments are physically separate boxes, owners or action authorities. |
+| Isn't the result obvious? | The contribution is the crossover map and the method, not "coordination helps when pivots are fast." |
+| Is MARL the contribution? | No. MARL for lateral movement exists. The contribution is belief propagation across a protocol bridge, justified by the pivot scenario and tested against alternatives. |
+| Your pivots are synthetic. | Yes: injected on real benign topology, with calibrated MMPP, held-out injection styles, and sensitivity sweeps; stated as simulated evidence. |
+| Why not cloud streaming for real-time sharing? | Latency alone does not separate them (latency test); the case against cloud rests on privacy and bandwidth, which must be measured. |
+| Does it scale? | Report scaling curves in agents and segments, not extrapolation from three agents. |
+
+### 17. Risks
+
+1. Simulation trust: injected pivots, no labeled cross-protocol data.
+2. Environments chosen after seeing results look cherry-picked: fix them first.
+3. Unequal tuning between arms; MARL training instability and non-stationarity.
+4. The 5G leg has no co-located device data.
+5. Undefined: policy-to-protocol action mapping, reward/cost model for graded actions, novelty-state calibration, agent placement (device, hub, cloud).
+6. All novelty claims rest on shallow searches.
+7. Detection delay (Paper 1) caps what Paper 3 can achieve.
+
+### 18. Rating
+
+About 8/10 for the whole three-paper path (my judgment, not a measurement). It would move to about 8.5 if the A1-vs-A3 justification holds, the threat model fixes the pivot-speed assumption, and the novelty sweep comes back clean. It drops if A1 wins everywhere and the benchmark is the only surviving contribution.
+
+### 19. Test and check list (in order; cheap kill tests first)
+
+1. Write the threat model (attacker type, pivot speed, evasion of the belief channel).
+2. Replace latency-test timings with measured values; add sourced pivot-delay data if any exists.
+3. Define the policy-to-protocol action mapping and the reward/cost model.
+4. Build the minimal cross-protocol simulator and fix environments E1–E4 and hypotheses before running.
+5. Run a small A1 vs. A3 pilot to see whether separation shows any signal.
+6. Check FRL-IPS's experiment section for the unit of stabilization time.
+7. Decide agent placement (device, hub, cloud) and measure inference cost on target-class hardware.
+8. Run the systematic IEEE Xplore/ACM/Scopus sweep (cross-protocol + MARL/CTDE; Andreou et al.; gateway-MARL papers; also PMBM/entity-resolution items still pending from Updates 5–7).
+9. Verify all (verify) items and the related-work table against full text.
+10. Carry forward all open items from Updates 1 to 15.
+
