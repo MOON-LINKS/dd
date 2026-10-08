@@ -1089,3 +1089,241 @@ Two homes, each with their own independent hub, do not need real-time coordinati
 1. Resolve the per-device vs. per-home agent granularity decision (Section 14) — this also finally settles whether "CTDE" belongs in the thesis title, an open question since early in this roadmap.
 2. Define the adjacency-clustering criterion concretely for the smart-city case (what counts as "shared infrastructure" — same hub? same gateway? same subnet?) before this becomes experimental design.
 3. This remains architectural reasoning, not yet validated against data or a simulation — no experiment has tested whether round-trip federated aggregation is actually too slow to catch a real cross-protocol pivot; that latency comparison is itself a testable future experiment, not yet designed.
+
+
+---
+---
+
+# UPDATE 13 — 8 Oct 2026 (new section only; everything above is unchanged)
+
+## New Recommendation: Three-Paper Path, "Believe → Scale → Coordinate"
+
+**Status:** recommendation for further study, not a final decision. It restructures the 3 main papers around one dependency chain. Items marked (suggestion) are my additions, not decisions already in the roadmap. Items marked (verify) were not checked against full text.
+
+### 1. The three papers
+
+| Paper | Name | What it does | Depends on |
+|---|---|---|---|
+| **1** | Believe | POMDP + PPO (or BF-PPO) agent with an explicit zero-day/unknown-attack belief, using an MMPP + GRU world model (MBRL) | Nothing, it is the base |
+| **2** | Scale | The same Paper 1 agent trained federated across homes/devices, evaluated under non-IID traffic (Candidate 1: does MBRL reduce the federated stabilization-time penalty that FRL-IPS reported for model-free DDQN?) | Paper 1 |
+| **3** | Coordinate | MARL/CTDE for cross-protocol defense inside a home (Wi-Fi to hub to Zigbee/Z-Wave pivots), built on the federated model from Paper 2 | Papers 1 and 2 |
+
+**Thesis arc:** Believe (Paper 1) → Scale (Paper 2) → Coordinate (Paper 3).
+
+### 2. What changes versus the earlier roadmap
+
+- **Digital twin + belief-state XAI (old Paper 3) is no longer a core paper.** It becomes an optional extension. This removes the weakest paper and the overlap with IDS-agent.
+- **Candidate 3 (cross-protocol) and the MARL/CTDE question merge into one paper (the new Paper 3).** This matches Section 15: cross-protocol pivoting is the concrete reason coordination is needed.
+- **The GNN is now optional, not assumed.** Under MARL, agents could share beliefs directly instead of a separate graph model scoring the hub. Decide whether the GNN stays (see question 4 below).
+- **Candidate 2 (Byzantine-robust belief fusion) stays a backup only** (crowded field, "just combining models" attack risk).
+- Updates 11's PPT blueprint (Slide 10 pairing of Candidate 3 + XAI paper) would need revising if this structure is adopted.
+
+### 3. Recommendation
+
+Adopt Believe → Scale → Coordinate as the working structure, with XAI/twin as an optional extension and Candidate 2 as backup. Reasons:
+1. Each paper strictly builds on the previous one, so the path reads as one system, not four separate ideas.
+2. Federation and MARL both appear in the thesis, which resolves the earlier worry that Candidate 3 and the XAI paper contained neither.
+3. CTDE gets a concrete justification (shared-hub pivoting) instead of being asserted.
+4. It drops the two papers with the weakest novelty position (XAI/IDS-agent overlap, Byzantine/SF-CABD overlap).
+
+For the committee, present the whole system as the vision, and keep the build order (1 → 2 → 3) honest on the roadmap slide.
+
+### 4. Decisions to settle before writing (with potential answers)
+
+**Q1. What is the "agent" unit: per device or per home?**
+- *Per-device agents:* needed for Paper 3 (several agents inside one home must exist to coordinate). Paper 1 should then be designed per-device from the start.
+- *Per-home agent:* simpler, but then there is no multi-agent coordination inside a home and Paper 3 loses its CTDE justification.
+- *Potential answer (suggestion):* design Paper 1's agent so it can run per device, and evaluate it first on a single network. Record this choice explicitly, because it also decides whether "CTDE" belongs in the title.
+
+**Q2. How does the federated model reach the MARL agents in Paper 3?**
+- *Potential answer (suggestion):* the federated global model is each device agent's starting point, then CTDE training teaches the agents to share beliefs across the hub.
+- Decide and record whether the federated weights are frozen or fine-tuned during Paper 3.
+
+**Q3. Is it CTDE/MARL or federated RL?**
+- Rule from the roadmap: CTDE only fits when agents' actions affect each other (shared infrastructure, or spread faster than a federated round-trip).
+- *Potential answer:* Paper 2 is federated RL (independent PPO agents, shared weights, no real-time coordination, IPPO-style). Paper 3 is the CTDE/MARL part (MAPPO-style shared critic during training), limited to devices sharing a hub. Across separate homes the design stays federated.
+
+**Q4. Does the GNN stay?**
+- *Keep it* if the agents need structural evidence about who connects to whom through the hub.
+- *Drop it* if shared beliefs between agents carry that information already.
+- *Potential answer (suggestion):* start without the GNN, and add it only if a simple new-neighbor heuristic baseline performs poorly. This also gives the "why a GNN" justification a measured basis.
+
+**Q5. What is the unit of "stabilization time" for Candidate 1?**
+- The roadmap quotes FRL-IPS as needing "more training to stabilize" but I only have that one line (verify). The unit could be training rounds, episodes, or environment steps.
+- *Potential answer:* read the paper's experiment section, then define your metric in the same unit so the comparison is fair. If the cost is mostly real interaction, MBRL's imagined rollouts could plausibly reduce it; if it is rounds, they may not.
+
+### 5. Likely committee questions and potential answers
+
+**Why federated learning at all?**
+- Federation has real costs (slower convergence, update leakage). Justify it only where centralizing is undesirable: continuous per-device traffic is behaviorally sensitive, expensive to ship at fleet scale, and constrained by data-minimization expectations (verify the exact legal framing for your target regions).
+- Include a **centralized baseline** to measure exactly what federation costs and buys.
+- Weak point to prepare for: RAIDEN already uses arrival-rate summaries, so the privacy argument is weaker than for raw packets. Lean on scale and data-minimization, and state privacy narrowly.
+
+**Is it private?**
+- Say: raw traffic never leaves the device (data minimization); no formal privacy guarantee is claimed; update leakage (gradient inversion, membership inference) is a known risk, addressed as a bounded extension using secure aggregation and/or differential privacy.
+- Note that differential privacy noise slows convergence, which interacts with Candidate 1. Decide whether to run Candidate 1 without DP, or include a DP arm.
+- Attack and defense references (Zhu et al., Bonawitz et al., McMahan et al.) come from background knowledge (verify titles and years before citing).
+
+**Why model-based RL (MBRL) here?**
+- It reduces the real interaction needed, and the GRU world model's prediction residual is also the POMDP's anomaly/observation signal. Frame the federated benefit as a hypothesis (Candidate 1), not a guaranteed property.
+
+**Is MARL the contribution?**
+- No. CTDE for IoT defense already exists (for example H-MARL on CAGE-4). The contribution is cross-protocol belief propagation inside the hub's reach, justified by the pivot scenario.
+
+**How do you get data for cross-protocol pivots?**
+- No dataset with labeled cross-protocol pivots was found. Plan: real benign multi-protocol topology (CICIoT2023, CIC IoT 2022) plus injected, documented pivots, with sensitivity sweeps and held-out injection styles. State plainly that injected pivots are synthetic evidence on real topology.
+
+**How is Paper 2 different from Amamou et al. (AINA 2026)?**
+- They federate the weights of a detector inside an agentic system. This thesis federates a belief-driven, decision-making agent with an explicit unknown-attack belief and tests the non-IID cost of model-based vs. model-free learning. Re-verify against their full text.
+
+**"You are just combining existing models."**
+- Test: does the combination solve something the pieces cannot for a structural reason? Paper 1's GRU residual is the POMDP observation (a dependency, not decoration), and Candidate 1 is an open empirical question with a published baseline to beat.
+
+**What if a paper fails?**
+- Paper 2's result is meaningful either way (MBRL helps, or it does not and you report the cost). Paper 3 is the riskiest empirically, so keep Candidate 2 (Byzantine-robust belief fusion) and the XAI/twin extension as fallbacks.
+
+### 6. Main risks
+
+1. **Paper 3's evidence:** synthetic pivots, no labeled data, and the "federated round-trip is too slow to catch a pivot" claim is untested.
+2. **Agent-unit mismatch (Q1):** if Paper 1 is built per-network and Paper 3 needs per-device agents, work gets redone.
+3. **Search depth:** all novelty claims come from open-web and single-index searches, not a systematic IEEE Xplore/ACM DL/Scopus sweep.
+4. **Scope:** keep XAI/twin and Candidate 2 out of the main plan unless a core paper falls through.
+
+### 7. Open items from this update
+
+1. Decide Q1 to Q5 above and record the answers.
+2. Revise the PPT blueprint (Update 11) to match the Believe → Scale → Coordinate structure.
+3. Read FRL-IPS's experiment section to fix the unit of stabilization time.
+4. Run the systematic literature sweep for cross-protocol / hub-mediated lateral movement with MARL/CTDE (Section 15 reasoning is architectural only, not yet tested).
+5. Carry forward all open items from Updates 1 to 12; none are superseded by this update.
+
+---
+---
+
+# UPDATE 14 — 8 Oct 2026 (new section only; everything above is unchanged)
+
+## Likely Committee Questions on Federated Learning: Federated vs. Centralized, Scale and Bandwidth, then Privacy
+
+**Status:** study notes with prepared answers. Items marked (verify) come from my background knowledge or a single quoted line and were not checked against full text. Real-life analogy used throughout: a pizza chain whose shops keep their own receipts.
+
+---
+
+### Part A. Federated vs. Centralized (vs. Decentralized)
+
+**Q1. What is the difference between centralized, federated and decentralized training?**
+
+| Setup | Who trains | What travels over the network | Central server? |
+|---|---|---|---|
+| **Centralized** | One server, on pooled data | All raw traffic | Yes |
+| **Federated** | Each device or home trains locally | Only weight updates | Yes, but it only averages weights |
+| **Decentralized (peer-to-peer)** | Each device trains locally | Weights swapped directly between neighbors | No |
+
+- **Smart-home example:** in centralized training, 10 devices upload raw traffic (source, destination, timing) to one server that sees everything. In federated training, each device keeps its raw traffic, trains locally, and sends only weight updates. The device still uses source, destination and timing locally; it just never ships them out.
+- **Pizza analogy:** centralized = every shop mails all its receipts to head office, which writes one recipe book from the pile. Federated = each shop tweaks the recipe locally and mails only the tweak.
+- **Terminology trap:** "decentralized" has two meanings. In CTDE, "decentralized execution" means each agent acts on its own at runtime. In the table above, "decentralized" describes the training communication layout (no central server). A federated system can have decentralized execution without being peer-to-peer.
+
+**Q2. What does this have to do with IID and non-IID?**
+
+- **IID** = Independent and Identically Distributed: every device's data looks statistically alike.
+- **Non-IID**: devices' data genuinely differs (different device types, usage patterns, attack mixes).
+- Centralized training pools and shuffles everything, so the mixture behaves like IID data and **non-IID does not hurt it**. Federated training keeps data separated, so each device's skew shows up as **client drift** (local models specialize in what they individually see, and averaging them gives a temporarily worse blended model).
+
+| | Data location | Does non-IID hurt? |
+|---|---|---|
+| Centralized | Pooled in one place | No (pooling smooths differences) |
+| Federated, IID | Stays local, devices look alike | Barely |
+| Federated, non-IID | Stays local, devices differ | Yes: slower and shakier |
+
+- **Why centralized is the baseline:** it is the "no-problem" reference. The gap between centralized and federated-under-non-IID is the exact cost of choosing federation.
+- Non-IID types for the fleet: label skew (camera sees mostly recon, lock mostly access attempts), feature skew (same attack looks different on different devices), quantity skew (gateway vs. battery sensor), temporal drift (new attack hits some devices first).
+- Heterogeneous traffic is the real-world *cause*; non-IID is the resulting statistical property. Keep the two terms distinct in the thesis.
+
+**Q3. What is the weakness of federated learning that Paper 2 targets?**
+
+- Quoted finding from FRL-IPS (federated DDQN intrusion prevention across SDN domains), the only line I have: federated training reaches prevention behavior comparable to centralized training at steady state, but needs more training to stabilize, and heterogeneity increases transient variability and stabilization time.
+- Plain reading: it works eventually, but the journey is slower and shakier.
+- **Do not claim more than this.** I do not know whether the paper measures stabilization in rounds, episodes or environment steps (verify from the experiment section). That unit decides what Candidate 1 measures and how MBRL's imagined rollouts could help.
+- **Candidate 1 stays a hypothesis:** MBRL's imagined rollouts may reduce the non-IID stabilization penalty relative to a model-free agent. It is not a guaranteed property of the architecture. Frame it as a research question benchmarked against FRL-IPS.
+
+**Q4. Is a federated agent just a weaker version of a centralized one?**
+
+- Prepared answer: federation costs convergence speed, and I do not claim it beats centralized training. I include a centralized baseline to measure exactly what federation costs and what it buys. The Paper 2 question is whether a model-based agent shrinks that cost.
+
+---
+
+### Part B. Why Federated at All? Scale and Bandwidth
+
+**Q5. Why use federated learning anyway?**
+
+Federated learning is justified only when centralizing the data is a problem. Name which problem. Pizza analogy: head office should collect receipts unless that is too costly, forbidden, or distrusted.
+
+| Reason | Argument | Strength / caveat |
+|---|---|---|
+| **Scale and bandwidth** | At fleet scale, continuously shipping raw traffic from every device becomes a bottleneck. Weight updates are sent periodically. | Strong in general. But the saving depends on model size and number of rounds, so **measure communication cost** instead of assuming it. RAIDEN's inputs are already small arrival-rate summaries, which weakens this argument for RAIDEN specifically. |
+| **Data sensitivity** | IoT traffic patterns reveal behavior (when a lock talks shows when someone is home). Centralizing builds a database of household routines. | Strong, but see Part C: weights are not private by guarantee. |
+| **Regulation / data minimization** | Rules such as GDPR's data-minimization principle push toward not moving personal data unless necessary; some jurisdictions restrict cross-border transfer. | (verify) exact legal framing for the regions you target before citing. |
+| **Trust and ownership** | If devices belong to customers, they are more willing to participate when raw data stays home. | Soft argument; use as support, not as the lead. |
+| **User preference / policy** | Some deployments or users prefer or require keeping data local. | Valid as an additional layer. |
+
+**Q6. "Your devices already phone home to the vendor's servers. Why not send the traffic there too?"**
+
+- Phoning home for firmware updates or control is not the same as uploading continuous behavioral traffic: different volume, different sensitivity.
+- Do not lean mainly on privacy for this scope. Bandwidth and data-minimization are the safer arguments, and privacy should be stated narrowly.
+
+**Q7. "RAIDEN uses arrival rates, already compressed summaries. Why federate?"**
+
+- Honest answer: per-device arrival-rate series can still reveal usage patterns (occupancy, schedules), and per-device streams still scale poorly. But concede that this makes the privacy argument weaker than for raw packets. This is another reason to lean on scale and data-minimization.
+
+**Prepared answer (say it out loud):**
+
+> "Federated learning isn't free: it converges more slowly and update leakage is a known risk, so I don't claim it's better than centralized training. I use it where centralizing is undesirable: continuous per-device traffic is behaviorally sensitive, expensive to ship at fleet scale, and increasingly constrained by data-minimization expectations. I include a centralized baseline to measure exactly what that choice costs, and my Paper 2 question is whether a model-based agent can shrink that cost."
+
+**Framing to decide before the meeting:** is federation central to the thesis claim or a deployment choice? Candidate 1 treats it as central (non-IID stabilization is the experiment), so the honest framing is that Paper 2 studies the *cost* of federation and how to reduce it, not that federation is inherently superior.
+
+---
+
+### Part C. Privacy
+
+**Q8. Why isn't it accurate to call federated learning "private"?**
+
+- Plain version: sharing weights instead of raw data is **data minimization, not a privacy guarantee**. A weight update is computed *from* the local data, so it carries a compressed fingerprint of it. Pizza analogy: a recipe tweak saying "use less anchovy, double the garlic" tells head office what the neighborhood likes, and with effort could be worked backward toward individual orders.
+- Known leakage mechanisms (names from background knowledge, (verify) before citing):
+  1. **Gradient inversion / reconstruction:** gradients are mathematically tied to the training examples that produced them, and training samples can sometimes be reconstructed from them (Zhu et al., "Deep Leakage from Gradients" is the usual reference). Typical attacker: the server, or anyone who intercepts the update.
+  2. **Membership inference:** deciding whether a specific record was in the training data.
+  3. **Property inference:** learning a property of local data (for example "this home has night-time activity" or "this fleet is mostly cameras") without recovering any single record.
+  4. **Memorization:** networks can memorize rare examples.
+- **Why it matters in IoT:** traffic patterns reveal behavior (occupancy, routines).
+- **Honest nuance for RL:** most leakage research targets supervised models. Leakage from RL policy or value weights is less studied, which means thinner evidence in both directions. State it as an open point, not as a claim either way.
+
+**Q9. What would make it genuinely more private?**
+
+| Defense | Plain meaning | Protects against | Cost |
+|---|---|---|---|
+| **Secure aggregation** | Updates are cryptographically masked so the server sees only the sum | A curious server reading individual updates | Communication overhead, trouble with dropped devices |
+| **Differential privacy (DP)** | Clip each update and add calibrated noise, with a measurable privacy budget (ε) | Membership and reconstruction attacks, even from the aggregate | Trades accuracy and convergence speed for privacy |
+| **Homomorphic encryption** | Server averages encrypted updates | Server and eavesdroppers | Heavy compute, hard on constrained IoT devices |
+| **Trusted execution environments** | Aggregation runs inside a hardware-isolated enclave | Server operators | Hardware dependency, enclave side channels |
+
+- Common practical pairing: **secure aggregation + DP**. Secure aggregation hides individual updates; DP bounds what even the aggregate reveals.
+
+**Q10. Does adding privacy interact with your experiments?**
+
+- **DP and Candidate 1:** DP noise slows convergence, which makes the non-IID stabilization problem worse. Decide deliberately: either run Candidate 1 without DP and state the privacy claim narrowly, or include a DP variant as an explicit second experimental arm.
+- **CTDE and privacy:** a centralized critic wants joint observations across agents, which pushes against "raw data stays local." Secure aggregation helps for weights, but a critic that sees joint states is a bigger leak. This is another reason to keep CTDE limited to devices sharing a hub (Paper 3), where the critic can live on the home hub and raw data never leaves the home.
+
+**Q11. How should the privacy claim be worded in the proposal?**
+
+Instead of "the system is private," use:
+
+> "Raw traffic never leaves the device (data minimization). We do not claim formal privacy guarantees; update leakage via gradient inversion and membership inference is a known risk, which we scope out of the core contribution and address as a bounded extension using secure aggregation and/or differential privacy."
+
+---
+
+### Open items from this update
+
+1. Read FRL-IPS's experiment section to fix the unit of stabilization time (rounds, episodes or environment steps), then define Candidate 1's metric in the same unit.
+2. Add a **communication-cost measurement** to Paper 2 (bytes per round and total to stabilize, federated vs. centralized), so the bandwidth argument is measured instead of assumed.
+3. Decide whether Paper 2 includes a differential-privacy arm or states the privacy claim narrowly without one.
+4. Verify the legal framing (data minimization, cross-border transfer) for the regions you target before citing it.
+5. Verify the leakage and defense references (Zhu et al., Bonawitz et al., McMahan et al.) for exact titles and years.
+6. Decide whether federation is the thesis's central claim or a deployment choice, and word the title and abstract to match.
