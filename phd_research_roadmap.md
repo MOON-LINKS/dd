@@ -1327,3 +1327,88 @@ Instead of "the system is private," use:
 4. Verify the legal framing (data minimization, cross-border transfer) for the regions you target before citing it.
 5. Verify the leakage and defense references (Zhu et al., Bonawitz et al., McMahan et al.) for exact titles and years.
 6. Decide whether federation is the thesis's central claim or a deployment choice, and word the title and abstract to match.
+
+
+---
+---
+
+# UPDATE 15 — 8 Oct 2026 (new sections only; everything above is unchanged)
+
+## Working Title Candidates
+
+**Recommended (option 1):**
+**Belief-Driven Defense Against Novel Attacks in IoT: Federated and Multi-Agent Reinforcement Learning Across Heterogeneous Devices and Protocols**
+
+**Other candidates:**
+2. Zero-Day-Aware, Belief-Driven IoT Defense: Federated and Multi-Agent Reinforcement Learning from Single Networks to Cross-Protocol Fleets
+3. Belief-Driven Federated Multi-Agent Defense for Heterogeneous IoT Networks (short version, for speaking)
+
+**Changes from the earlier draft ("0 day attack belief using federated MARL in heterogeneous environments and cross protocol"):**
+1. "Belief" alone is a noun with nothing attached. "Belief-driven defense" says what the system does and keeps the word that separates it from detection-only work.
+2. "Heterogeneous environments and cross protocol" says the same thing twice (protocol difference is one kind of heterogeneity). Update 13 defines two kinds: device and traffic differences (Paper 2, non-IID) and protocol differences (Paper 3). The title names both once, and the abstract defines them.
+3. "Federated multi-agent" is accurate for the whole system only. Paper 2 is federated RL (independent per-home agents, shared weights). MARL/CTDE enters in Paper 3, inside one home. The abstract must say this.
+4. "0-day" is replaced by "novel attacks". The claim is novelty relative to training, not true zero-day detection.
+
+**Conditions:** this is a working title. Two things could change it: (a) Paper 3's evidence (injected, synthetic pivots; the "federated round-trip is too slow to catch a pivot" claim is untested), and (b) whether the agent-unit decision below holds up.
+
+## Q1 Decision: What Is the "Agent" Unit?
+
+**Decision (resolves Q1 from Update 13):**
+- **Paper 1:** one agent per home, observing the whole home through a joint feature vector.
+- **Paper 2:** each home is one federated client, so the clients are per-home agents.
+- **Paper 3:** each home's agent is split into **one agent per protocol segment (pipeline)**, for example Wi-Fi, Zigbee/Z-Wave, 5G. CTDE applies among the agents inside one home. Across homes it stays federated.
+
+**Wording:** say "per protocol segment" or "per pipeline", not "per port". A committee will read "port" as a TCP/UDP port or a physical port.
+
+**Why this is a good structure:**
+1. **Each step follows from the last.** Per-home (Paper 1) gives clean federated clients (Paper 2), then splits by protocol where coordination is justified (Paper 3).
+2. **It is a natural Dec-POMDP.** Each protocol agent sees only its own segment, so partial observability becomes structural. A hub bridging two segments is also the shared-infrastructure case from the Update 9 decision rule.
+3. **It matches an existing architecture pattern.** MARL frameworks with one agent per multi-protocol gateway exist in the IoT communications literature (resource allocation and data collection, not security; verify). The security application is the gap.
+4. **MARL stays out of Papers 1 and 2**, so those papers carry no multi-agent complexity.
+
+**Consequences and risks:**
+1. **Design Paper 1's observation vector grouped by protocol segment from the start**, so it can be factored later. Otherwise Paper 3 means redoing Paper 1's design.
+2. **Update to Q2:** Paper 2's federated per-home weights do not transfer directly to Paper 3's per-protocol agents, because the observation and action spaces differ. Options: initialize each protocol agent's encoder from the matching slice of the federated model; or train Paper 3 from Paper 1's features. This is another reason to soften the Paper 2 → Paper 3 dependency and treat federated initialization as an ablation.
+3. **The 5G leg has a data gap.** CICIoT2023 covers Wi-Fi plus Zigbee/Z-Wave devices behind hubs (not true radio-layer data). 5G-NIDD is a separate dataset with no co-located devices. Evaluate the Wi-Fi ↔ Zigbee/Z-Wave pivot first, and treat the 5G agent as an extension with synthetic or cross-dataset evidence.
+4. **Action spaces differ per protocol.** A Zigbee agent's real actions (key rotation, blocking joins, isolation at the hub) are not the same as a Wi-Fi agent's (flow rules, firewall). How a policy decision becomes a protocol-specific action is still unspecified (carried over from the missed-spots list).
+5. **Agent placement is still undecided**: on the device, on the hub, or in the cloud. This determines whether the GRU/MBRL inference fits real compute limits.
+6. **Title:** "multi-agent" is accurate only for Paper 3. The abstract must make that explicit.
+
+### Open items
+1. Add the cross-protocol MARL related-work notes (closest neighbors: Andreou et al. 2025 CTDE cross-slice defense; multi-protocol-gateway MARL papers; HAMARL; Landolt et al. survey) and the narrower novelty wording: no work found combining MARL, security, and hub-mediated cross-protocol pivots. Based on two snippet-level searches, not a database sweep.
+2. Decide how Paper 3's agents are initialized (see Q2 update above).
+3. Run the latency test (is a federated round-trip too slow to catch a pivot?) before building any MARL.
+4. Define the observation-vector layout by protocol segment for Paper 1.
+5. Decide agent placement (device, hub, cloud) and check inference cost.
+6. Carry forward all open items from Updates 1 to 14.
+
+
+
+---
+
+## ⚠️ IMPORTANT DESIGN CONSTRAINT — Paper 1 Must Be Built Factorable by Protocol Segment (8 Oct 2026)
+
+**Check this before Paper 1's design is frozen. If it is missed, the cost shows up in Paper 3.**
+
+**The constraint:** Paper 1's per-home agent must take its observation as **fixed, named slots grouped by protocol segment** (for example Wi-Fi, Zigbee/Z-Wave, 5G), not as one flat feature vector. Paper 3 splits each home's agent into one agent per protocol segment, so Paper 1's input has to be divisible along those lines without redesign.
+
+**Why it matters:**
+1. If Paper 1 uses a flat vector, Paper 3 requires redoing the feature design, retraining, and re-running Paper 1's baselines. That is a late and expensive change.
+2. The Paper 3 split only works if each segment's features are already separable.
+3. A fixed layout probably also helps Paper 2. Homes with different device mixes can still share identical weight shapes, which FedAvg needs (reasoning, not tested).
+
+**What to build into Paper 1 now:**
+- **Fixed segment slots.** Each segment gets its own block in the observation, in a fixed order, even if Paper 1 only populates one or two of them at first.
+- **A presence mask per segment.** A home with no Zigbee devices gets a masked slot, not a different input size.
+- **Segment-specific feature extraction feeding a common anomaly signal.** Zigbee and Wi-Fi/TCP traffic look nothing alike, so each segment needs its own front end. Keep the extractors separate from the shared belief/policy core.
+- **An action layout that can be factored the same way.** If the observation splits by segment but the action space is one flat set, Paper 3 hits the same problem on the output side. Define per-segment action slots early, even if only some are used in Paper 1.
+- **The Paper 1 ablation still runs on the single per-home agent.** Factoring the layout must not change Paper 1's claims, only its structure.
+
+**Checkpoint (tick before Paper 1 design freeze):**
+- [ ] Observation is grouped into named segment slots with a fixed order
+- [ ] Missing segments handled by a mask, not a changed input size
+- [ ] Per-segment feature extractors are separate from the shared core
+- [ ] Action space has a factorable layout
+- [ ] A short note records which segments Paper 1 actually populates (likely Wi-Fi plus hub-mediated Zigbee/Z-Wave, since CICIoT2023 covers those, and 5G is a later extension)
+
+**Related risks this note does not solve:** how a policy decision maps to protocol-specific actions, where the agent runs (device, hub, cloud), and whether federated weights can initialize Paper 3's per-protocol agents. See Update 15's open items.
