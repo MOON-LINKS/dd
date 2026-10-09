@@ -1847,3 +1847,128 @@ Is there prior work combining: (a) model-based RL (world model), (b) PPO or BF-P
 5. Decide umbrella Option A vs. Option B (section 3) before drafting the title.
 6. Fix earlier wording: Update 8's "2026" for the Z-Wave review and "unstudied" wherever it appears; Update 10's dataset statement.
 7. Carry forward all open items from Updates 1 to 18.
+
+---
+---
+
+# UPDATE 20 — 9 Oct 2026 (new section only; everything above is unchanged)
+
+## Paper 3: Cross-Protocol Pivot Defense (headline, related work, claims, arms, evaluation)
+
+**Status:** working draft for further study, not a final decision. Related-work findings come from about six snippet and abstract-level searches, not a database sweep. Items marked (verify) were not read in full or come from general knowledge. Items marked (suggestion) are my additions.
+
+### 1. Headline of Paper 3
+
+> *Tracking and responding to an attack as it crosses from one protocol to another inside a smart home, using a belief that updates over time, without needing a known exploit.*
+
+**Working title (suggestion, not final):** *Belief-Driven Defense Against Cross-Protocol Pivoting in Multi-Protocol IoT Networks.*
+
+**Plain example:** a house has a Wi-Fi gate and a Zigbee back door, with a hub as the hallway between them. A normal alarm rings only after something breaks. A guard with a running belief says "someone got through the gate 20 seconds ago, so the back door is now at risk", and responds in steps: watch closely, then lock, then shut everything down. Pivots run both ways: Wi-Fi to hub to Zigbee, and Zigbee to hub to IP (the Philips Hue Bridge cases).
+
+**What changed versus Updates 15 to 17:** the CTDE-vs-single-agent comparison is no longer the headline. It becomes one pre-registered arm. If separation is not physical, "multi-agent" comes out of the title (Update 15 title option 1 currently contains "Multi-Agent", so mark it conditional).
+
+### 2. Why CTDE vs. single agent is not the headline
+
+1. **The pilot result is close to true by construction.** The pilot (Update 17) used hand-built threshold policies and one tuning seed. With zero delay and loss, a factored single agent (A1) and per-protocol agents with belief sharing (A3) have the same information, so A3 cannot beat A1. Treat "A1 matches or beats A3 in one box" as a sanity check, not a finding.
+2. **The box may not be separate.** (verify) Many smart-home hubs host the Zigbee or Z-Wave radios and the IP side in one device. If so, one agent sees everything and a protocol split has no physical basis.
+3. **A paper whose story needs MARL to win is fragile.** MARL training is unstable and costs more to tune fairly.
+
+### 3. Corrected novelty wording
+
+Updates 16, 19 and my earlier Update 20 draft say no runtime belief-based defense was found for hub-mediated pivots. That is too strong. **IoTHaven** (Alam, UNC Charlotte dissertation 2024) is a POMDP-based real-time defense (DRQN) for hub-mediated injection chains in partially observable smart homes.
+
+**Corrected wording:** I found no work that (a) treats a compromise crossing a protocol boundary (Wi-Fi, Zigbee, Z-Wave) as the tracked object, (b) carries a per-segment belief that includes an unknown-attack state, and (c) drives graded responses from it. Also correct earlier wording that says cross-protocol is "unstudied": pivoting is a documented attack class (2017 to 2026) and is modeled statically.
+
+### 4. Paper 3 related-work table
+
+| Work | Venue / year | What it does | Overlap with Paper 3 | Gap versus Paper 3 |
+|---|---|---|---|---|
+| IoTHaven (Alam) | UNC Charlotte dissertation, 2024 | POMDP + DRQN defense for remote injection attacks in partially observable trigger-action smart homes | Closest: POMDP, runtime, smart home, hub-mediated chain, learned response | Injection through trigger-action rules, not protocol crossing (abstract does not mention protocol boundaries, verify); no novelty belief, no federation, no world model |
+| IoTWarden (Alam et al.) | WCNC 2024, arXiv 2401.08141 | DQN real-time defense for injection attacks, MDP | Learned runtime response | Fully observable framing; same attack type |
+| RESTRAIN (Alam et al.) | arXiv 2503.09513 | Platform-independent multi-agent online defense, trigger-action IoT | Multi-agent, defense through the hub | Same attack type; dissertation outline mentions competitive MARL (verify), not cooperative CTDE |
+| Signal Emulation Attack and Defense for Smart Home IoT (Zhang et al.) | IEEE TDSC 2022 | Wi-Fi device emulates a ZigBee signal to control a ZigBee device; proposes two defenses | A real Wi-Fi to ZigBee cross-protocol attack with defense | Physical-layer attack and defense; no sequential belief or learned response (defense details not seen, verify) |
+| RAGIIoT (Li, Liu) | IWQoS 2025 poster | Probabilistic attack graph updated by real-time anomalies, CVSS and MITRE ATT&CK mapping | Belief-like inference over threat propagation at runtime | IIoT, risk prioritization, relies on known vulnerability mappings, no RL response (abstract only) |
+| Iota (Fang et al.) | IEEE TMC 2022 | System-level attack graphs across devices, protocols, cloud, apps | Models attack paths across components | Design-time analysis; scans for known vulnerabilities |
+| Dynamic attack graphs (Salayma) | Front. IoT 2024 | Attack paths when devices join and leave | Dynamic IoT topology | Threat modeling, not runtime defense |
+| Bayesian attack graphs for IoT (Wakam Younang, Sen) | IEEE TDSC 2025 | Risk assessment with complex probabilities | Probabilistic path reasoning | Risk assessment, not runtime |
+| HMM multi-stage detection (Zhang et al. 2022; Wang et al. 2024; Moudoud et al. 2022; MS-ZeroWall 2024) | Various | Sequential inference over attack stages | Sequential state over an unfolding attack | Mostly enterprise or single protocol; no RL response |
+| RL adaptive Zigbee key rotation (Fang et al.) | Sci Rep 2024 | RL on the Zigbee side only | Zigbee-side RL actions exist | Single protocol, single agent |
+| RL + fingerprinting for MTD against zero-day (Celdran et al.) | arXiv 2212.14647 | RL selects moving-target defenses on a real Raspberry Pi | Zero-day framing with RL | Single device, no pivot |
+
+### 5. What Paper 3 claims, and what it does not
+
+**Does not claim (inherited from Papers 1 and 2):** the unknown-attack belief, the MMPP/GRU world model, PPO, federated training. State this in the paper so Paper 3 is not read as repeating Paper 1.
+
+**Claims (suggestion):**
+1. **Method:** a segment-structured belief where each segment keeps Paper 1's belief (including the unknown-attack state), plus a cross-segment propagation term across the hub and graded responses, with pivots in both directions.
+2. **Key differentiator:** defense against pivots that do not depend on a known exploit. Attack-graph methods lean on known vulnerability data (RAGIIoT and Iota abstracts), and IoTHaven has no novelty state. A compromise by an unseen exploit should still raise downstream risk through the unknown-attack belief. Untested; this is the claim that must be demonstrated.
+3. **Benchmark:** documented pivot scenarios on real benign topology, released with the environment code.
+4. **Evidence map:** when separating agents costs little (CTDE arm), reported as an ablation, not the headline.
+
+**One-sentence contribution (draft):** a runtime defense that tracks a compromise as it crosses a protocol boundary and responds in graded steps, without needing a known exploit.
+
+**Attack-graph structure (suggestion):** a graph like Ge et al. (2017) can define which segments influence which, replacing an ad hoc propagation layer. Differentiate from RAGIIoT and Bayesian attack-graph work on sequential belief updating, learned graded response, multi-protocol scope and the novelty state. Read those papers in full before claiming it.
+
+**Where separation could be real (suggestion, unverified):** across ecosystems rather than protocols inside one box. A home often has a bridge from one vendor, a different hub, a router and a voice assistant, run by vendors that do not share raw data. Not checked: whether this is studied, how common it is, and what vendors expose.
+
+### 6. Arms and ablations (each removes one piece so each piece has to earn its place)
+
+| Arm | What it is | What it tests |
+|---|---|---|
+| A0 | Paper 2's per-home agent | Baseline from Paper 2 |
+| A1 | Factored single agent, per-segment slots | Whether separation is needed at all |
+| A2 | Independent per-segment agents | Value of belief sharing (floor) |
+| A3 | Per-segment agents with belief sharing (CTDE) | Tested only where separation is forced: delayed or lossy links, smaller coordinator model, restricted action authority |
+| IH | IoTHaven-style DRQN POMDP agent (suggestion) | Whether an explicit belief with a novelty state beats a recurrent hidden state |
+| AG | Non-learned attack-graph propagation baseline (suggestion) | Whether learning is needed at all |
+| NK | Proposed method with the novelty state removed (known-attack belief only) | Whether the novelty state matters for pivots |
+
+### 7. Evaluation protocol
+
+- Real benign multi-protocol topology plus injected pivots, both directions, varied speed, hop count and stealth.
+- **Held-out exploit families:** train pivot behavior on some exploit families and test on others. The novelty claim lives or dies here, and it is the hardest part to build credibly.
+- Metrics: containment before downstream compromise, time to contain, false isolation rate (per direction), communication cost.
+- Equal tuning budget across arms, grid-edge checks on every tuned parameter, separate tuning and evaluation seeds, pre-registered decision rules.
+- Timing: use the latency tests from Update 17 as a design aid only; replace assumed timings with measured ones.
+
+### 8. Hypotheses (pre-register; not results)
+
+1. The proposed method beats IH and AG on held-out exploit families.
+2. NK performs close to the proposed method on known exploits and worse on held-out ones.
+3. A1 matches or beats A3 in one-box settings.
+4. A3 stays close to A1 unless pivots are in the seconds range or the channel is badly degraded.
+5. Any real multi-agent advantage comes from a physical constraint, not from the architecture.
+6. Federated per-home agents suffice for slow pivots (hours) and fail for fast ones.
+
+### 9. Decision rules (fix before running)
+
+| Outcome | What Paper 3 claims |
+|---|---|
+| Proposed method beats IH and AG on held-out exploits, and NK is clearly worse | Belief with novelty state helps against pivots without known exploits; main claim stands |
+| A3 beats A1 and A0 under a stated physical constraint | Multi-agent advantage exists, limited to that constraint |
+| A3 stays close to A1 across realistic delay and loss | Separation is cheap; method validated for physically separate deployments |
+| A1 matches or beats A3 everywhere | Drop the multi-agent claim, remove "multi-agent" from the title, keep the method and benchmark |
+| Method does not beat IH or AG on held-out exploits | Paper 3 reduces to the benchmark plus the A1-vs-A3 map |
+| Federated matches everything for slow pivots | Honest negative for coordination; benchmark and latency finding survive |
+
+### 10. Risks
+
+1. Inherits Paper 1's novelty calibration. If that belief is weak, hypothesis 2 fails.
+2. Injected pivots are synthetic evidence on real benign topology. No dataset is verified to label cross-protocol pivots (SHARP and BCCC-IoT-IDS-Zwave-2025 still unchecked).
+3. IoTHaven's environment may cover more protocols than the abstract suggests (verify).
+4. Pivot timing in IoT is unmeasured; sourced figures are enterprise anchors (Update 17).
+5. Detection delay (Paper 1) caps what Paper 3 can achieve.
+6. Policy-to-protocol action mapping, the reward/cost model for graded actions and agent placement are still undefined.
+7. All novelty claims rest on snippet-level searches.
+
+### 11. Open items
+
+1. Read IoTHaven (dissertation chapter 6) and check whether any environment spans more than one protocol.
+2. Read Zhang et al. (TDSC 2022) for what its two defenses are. Read RAGIIoT in full if accessible, and Ge et al. (2017) before the attack-graph claim goes into any draft.
+3. Implement IH and AG as baselines before building the main method.
+4. Define held-out exploit families and the pivot-injection protocol.
+5. Add the separation parameters (smaller coordinator model, bursty loss, restricted action authority) to the pilot and check whether A3 ever differs from A1 (cheapest next test). Repeat later with learned policies (IPPO/MAPPO), several seeds and grid-edge checks.
+6. Check whether common hubs really host both radio stacks, and whether cross-ecosystem belief sharing is studied.
+7. Add the Zigbee-to-IP pivot direction to the threat model (Update 17 assumes Wi-Fi to Zigbee only).
+8. Replace the novelty lines in Update 19 section 4 and Update 16 section 15 with the corrected wording in section 3, and mark Update 15's title option 1 as conditional on "multi-agent."
+9. Carry forward all open items from Updates 1 to 19.
