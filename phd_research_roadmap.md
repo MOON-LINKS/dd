@@ -1766,3 +1766,84 @@ Is there prior work combining: (a) model-based RL (world model), (b) PPO or BF-P
 3. Re-check Amamou et al. full text for RL or belief components (their group also published Big-IDS, decentralized MARL).
 4. Update the comparison table in Update 1 and the PPT literature slide with Q-BIRD, FedAtten-DRL, FMARL, FMADRL and Federated Ensemble MBRL.
 5. Carry forward all open items from Updates 1 to 17.
+
+
+
+---
+---
+
+# UPDATE 19 — 9 Oct 2026 (new section only; everything above is unchanged)
+
+## Whole-PhD Framing, Gap Survey, and Cross-Protocol (G9) Deep Dive
+
+**Status:** working notes for further study, not final decisions. Verification levels: READ = abstract or snippet seen directly; UNVERIFIED = not checked. About ten web searches this session, snippet-level, not an IEEE Xplore/ACM/Scopus sweep. Items marked (suggestion) are my additions. Authors' own limitation statements are weaker evidence than a field consensus.
+
+### 1. Change of framing: proposal for the whole PhD, not a paper list
+
+- The proposal describes one research problem and its supporting threads. Paper breakdown comes later.
+- Earlier updates are tracking notes. These items are kept for later papers or future work, not in the current proposal: the LMB/PMB/PMBM/EntityRes comparison (Updates 3-7), Byzantine-robust belief fusion (Candidate 2), XAI/digital twin, self-play (Idea F), and the identity-robust tracking line.
+- The title must name the field (IoT, multi-protocol, novel attacks, autonomous response), not only the concepts.
+
+### 2. Gap survey (what the literature itself says is missing)
+
+| # | Gap | Evidence (source) | Tie to our approach | Support |
+|---|---|---|---|---|
+| G1 | Detectors are tested in closed worlds | BRIDGE/TCH-Net (arXiv 2604.11324): most IoT detectors are evaluated on one benchmark, performance drops outside it, and the field lacks a reliable answer on cross-environment generalization. "Dataset-centric evaluation of federated IDS in IoT" (Sci Rep 2026, PMC12824137): most FL-IDS evaluations rely on a single dataset | Evaluate across environments, protocols and time | Two independent sources |
+| G2 | "Zero-day" is loosely defined; anomaly detection is noisy | ZAID (arXiv 2602.16098) defines zero-day as unseen attack families, not unknown vulnerabilities; BRIDGE: anomaly detection avoids the signature blind spot but gives many false positives because diverse IoT behavior makes a single baseline inadequate; a 2026 review (Iraqi J. Comput. Informatics 52(1)) lists unknown-attack handling, lightweight real-time models and generalization as gaps | Calibrated novelty belief; claim "novel relative to training" | Three sources |
+| G3 | Detection dominates, response is thin | FRL-IPS abstract (supplied by you): most SDN security work focuses on detection; prevention needs timely network-wide mitigation | Graded response from belief (throttle before isolate) | Single source |
+| G4 | RL for cyber defense: methodological pitfalls and sim-to-real gap | SoK on DRL pitfalls (arXiv 2602.08690): 11 pitfalls; gap between simulated and operational reality can give a false sense of security; cyber tasks break fixed-dynamics and full-observability assumptions. "Beyond Rewards in RL for Cyber Defence" (arXiv 2602.04809): real adversaries are not turn-based and adapt; environments modeling this remain open | Calibrate the traffic model to real traces; validate on real held-out data (the earlier MMPP rejection) | Several sources |
+| G5 | Partial observability under-treated | Drexel thesis "Strategic reinforcement learning agents for autonomous cyber defense": four fundamental flaws including state-space observability and fixed-size state space; arXiv 2509.20008 compares partial-observability techniques against plain PPO, but for penetration testing (offense) | POMDP belief on the defense side in IoT | Moderate; IoT defense side not covered |
+| G6 | Device sets change; policies assume fixed inputs | Entity-based RL for ACD (arXiv 2410.17647): fixed-size inputs clash with devices joining and leaving (enterprise setting) | Fixed protocol-segment slots with presence masks (see Paper 1 design constraint, Update 15) | One source; IoT extension is my inference |
+| G7 | Environments are enterprise-shaped | Automated Cyber Defence review (arXiv 2303.04926): CAGE challenges are enterprise environments; "Building Better Environments for ACD" (arXiv 2604.08805): CAGE 2 is the standard benchmark but has fundamental issues; a healthcare-IoT RL environment exists but is built on CyberBattleSim (exploit-chain oriented, from earlier notes) | An IoT, multi-protocol defense environment is missing | Several sources |
+| G8 | Federated IDS: heterogeneity, poisoning, no standard benchmarks | LCU 2025 survey: poisoning and inference attacks, client heterogeneity, non-IID, missing standardized benchmarks; Sci Rep 2026 benchmark: federated models approach centralized performance in-domain (FedAvg, FedProx, FedNova; Edge-IIoTset, CIC-IoT2023, TII-SSRC-23) | Open question shifts from in-domain accuracy to cross-environment behavior and the cost of federation for decision-making agents | Several sources |
+| G9 | Cross-protocol pivoting | See section 4 (revised) | Hub-mediated pivots | Moderate |
+| G10 | Defender agents can be exploited | DRL for autonomous cyber operations survey (arXiv 2310.07745) critiques methods for limiting exploitability | Robustness of belief and policy (future work) | One source |
+
+**Strongest (independent sources agree):** G1, G4, G7, G8. **Single-source:** G3, G10. **Partly my inference:** G6.
+
+### 3. How the gaps link into one thesis (three threads, not papers)
+
+1. **Decision under uncertainty about novelty** (G2, G3, G5, G6): a belief-driven agent that responds in graded steps.
+2. **Learning across heterogeneous, shifting IoT environments** (G1, G8): federated training, with the cost of federation measured and cross-environment generalization tested.
+3. **Realistic evaluation** (G4, G7, G9): an IoT environment with multi-protocol structure, calibrated to real traces.
+
+**Candidate umbrella (suggestion, to be chosen):** an autonomous agent that responds to novel attacks in multi-protocol IoT networks, trained federated, and evaluated across environments.
+- **Option A (response under uncertainty first):** threads 1 and 2 lead, thread 3 supports. Closest to work already done.
+- **Option B (environment and benchmark first):** thread 3 leads. More independent support, less existing work behind it.
+- **Decision pending.**
+
+### 4. G9 deep dive: cross-protocol pivoting
+
+**Corrections to earlier updates:**
+1. The Z-Wave dataset review cited in Updates 8 and 10 is from **2025, not 2026** (article identifier S2542660525…; York announcement dated 10 Nov 2025). Update 8's "2026" was wrong. Its statement is about dataset coverage at the time it was written; recency does not prove the gap.
+2. **The data gap is closing.**
+   - BCCC-IoT-IDS-Zwave-2025 (York): IP traffic, Z-Wave communication, device logs, MQTT; 88 attack scenarios, 110+ devices; attack scenarios were designed per data source, which suggests single-protocol attacks (verify).
+   - SHARP (Cardiff; Alosaimi, Rana, Perera; IEEE DataPort, DOI 10.21227/ray1-ag27; released 20 Sep 2026): one occupied two-bedroom flat; router/IP and Wi-Fi over-the-air captures, Zigbee captures, Z-Wave logs, telemetry (4.4 million rows); normal period 20 Jun-5 Jul 2025, attack campaign 13 Aug 2025; 36 documented attacks (ledger A001-A035, A038). No individual observation carries a verified attack-effect label. Subscription required; 172 GB. **Whether any SHARP or BCCC attack crosses protocols is unverified**; SHARP's attack guide could not be retrieved (404).
+3. Update 10's "no dataset with labeled cross-protocol pivots found" should read: none *verified*; SHARP and BCCC need checking.
+
+**What exists:**
+
+| Layer | What exists | Source |
+|---|---|---|
+| Attacks | Cross-technology pivoting: a compromised device becomes a stepping stone to attack other wireless technologies (Cayre et al., poster "Cross-protocol attacks: weaponizing a smartphone by diverting its Bluetooth controller", demonstrated against Zigbee and others). Philips Hue Zigbee flaw CVE-2020-6007 (Check Point, 2020): bulb compromise, then bridge compromise, then malware on the bridge connected to the home network. SSTIC 2026, "Flicker and Fall: rooting the Philips Hue Bridge both remotely and wirelessly": a Zigbee-reachable vulnerability on the Hue Bridge | Strong, recent |
+| Static modeling | Ge, Hong, Alzaid, Kim (2017), "Security Modeling and Analysis of Cross-Protocol IoT Devices": per-protocol security models combined via cross-protocol devices to compute hidden attack paths. Salayma (2024), dynamic attack graphs for IoT (Frontiers in IoT, doi 10.3389/friot.2024.1306465). Flores et al. (Entropy 2022, doi 10.3390/e24050668): Bayesian-network risk model for smart homes from an attack graph, parameters from simulated attacks | Design-time risk analysis |
+| Runtime, probabilistic | RAGIIoT (Li and Liu, IEEE/ACM IWQoS 2025, poster): static attack graphs converted to probabilistic ones weighted by real-time anomalies, CVSS and MITRE ATT&CK, for IIoT | **Closest neighbor**; risk prioritization, not RL response; abstract only |
+| Bayesian attack graph inference | arXiv 1510.02427: exact inference for Bayesian attack graphs, including dynamic analysis | Background |
+| Runtime detection | Shafi (York 2024 thesis): dual-tier detection using the hub's internet traffic and internal device traffic. ZMAD (Nkuba et al., IEEE Access 2023): lightweight Z-Wave IDS | Detection, not pivot tracking |
+
+**Refined gap statement (suggested wording; replaces "cross-protocol interaction is unstudied"):** cross-protocol pivoting is a documented attack class (2017-2026) and is modeled statically; I found no runtime defense that keeps a sequential belief over a pivot as it unfolds and chooses graded, learned responses, and the multi-protocol datasets are not verified to label pivots. Support: moderate (about eight searches, snippets only).
+
+**Design implications:**
+1. **Pivots run both ways.** The Hue cases go from a Zigbee device through the bridge into the IP network. The threat model (Update 17) assumes Wi-Fi to Zigbee to a lock; add the Zigbee-to-IP direction, with the hub as the weak link.
+2. **Attack graphs could structure the belief** (suggestion): a graph like Ge et al.'s defines which segments influence which, replacing an ad hoc cross-segment propagation layer. Differentiate from RAGIIoT and Bayesian attack graph work on: sequential belief updating, learned graded response, and multi-protocol scope.
+3. **Novelty wording must change** wherever the roadmap says cross-protocol is "unstudied" or "no work found". Safer: "no runtime belief-based defense found for hub-mediated pivots".
+
+### 5. Open items
+
+1. Read Ge et al. (2017) in full; read RAGIIoT, Salayma (2024) and arXiv 1510.02427.
+2. Obtain SHARP through institutional IEEE DataPort access; read the attack ledger and guides for any cross-protocol attack. Do the same for BCCC-IoT-IDS-Zwave-2025.
+3. Add the Zigbee-to-IP pivot direction to the threat model.
+4. Run the database sweep (IEEE Xplore, ACM DL, Scopus). Query strings still to be written, covering: cross-protocol or multi-protocol AND (pivot OR lateral movement OR attack graph) AND (smart home OR IoT) AND (belief OR POMDP OR Bayesian OR reinforcement learning).
+5. Decide umbrella Option A vs. Option B (section 3) before drafting the title.
+6. Fix earlier wording: Update 8's "2026" for the Z-Wave review and "unstudied" wherever it appears; Update 10's dataset statement.
+7. Carry forward all open items from Updates 1 to 18.
