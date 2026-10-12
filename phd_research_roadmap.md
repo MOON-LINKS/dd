@@ -1972,3 +1972,59 @@ Updates 16, 19 and my earlier Update 20 draft say no runtime belief-based defens
 7. Add the Zigbee-to-IP pivot direction to the threat model (Update 17 assumes Wi-Fi to Zigbee only).
 8. Replace the novelty lines in Update 19 section 4 and Update 16 section 15 with the corrected wording in section 3, and mark Update 15's title option 1 as conditional on "multi-agent."
 9. Carry forward all open items from Updates 1 to 19.
+
+
+
+# UPDATE — 12/10 (12 Oct 2026) (new section only; everything above is unchanged)
+
+## Clarification: Where the Model Lives, Where Learning Happens, and What Federated Training Actually Does
+
+**Status:** terminology and design clarification, not a new experiment. It resolves a recurring confusion: "the model is at home level, but federated is not learning?"
+
+### 1. The core distinction
+- **The model** (belief, world model, policy) lives in each home. It is the agent that acts.
+- **Learning happens locally**: PPO updates from the home's own traffic, plus imagined rollouts from the world model (MBRL).
+- **Federated training is not a second model or a separate learner.** It is the rule for combining what the homes learned.
+- **The server holds a global model but never sees data and never trains on any.** It improves only by averaging what the homes send.
+- Wording to use: "federated is not a separate learner," not "federated is not learning."
+
+| Piece | What it is | Where |
+|---|---|---|
+| Model (belief, world model, policy) | The agent that acts | Each home |
+| Local learning | PPO updates plus imagined rollouts, from the home's own traffic | Each home |
+| Federated training | The rule for combining the homes' learned weights | Coordinated by the server |
+| Global model | The average of the homes' weights | Held by the server, sent back to homes |
+
+### 2. What travels: weights, not a dataset
+- **Weights** = the numbers inside the model after learning. They go to the server.
+- **Dataset / raw traffic** never leaves the home.
+- Returning the averaged weights is **automatic, part of the training loop**, not a manual push to each home.
+- Federation is about **sharing knowledge across homes**, not mainly about faster retraining. Example: a new attack seen on 3 homes is carried in their weights; after averaging, all homes benefit without seeing that traffic.
+
+### 3. The training loop (repeated in rounds)
+1. **Local training:** each home trains its own model on its own traffic.
+2. **Upload:** each home sends its weights to the server.
+3. **Averaging:** the server averages the weights into one global model (FedAvg, or FedProx under non-IID).
+4. **Return:** the server sends the global model back to every home.
+5. **Repeat:** each home continues from the global model.
+
+Analogies: pizza shops improving their own recipes while head office only averages the tweaks; or students each writing a summary from their own textbook while a teacher averages the summaries into one study guide (the teacher never reads the textbooks).
+
+### 4. Open design choice: what does a home run after each round?
+| Option | Behavior | Trade-off |
+|---|---|---|
+| **A. Use the global model as is** | Every home runs the same averaged weights | Simple; weak if a home's traffic differs from the fleet's (non-IID) |
+| **B. Fine-tune locally after each round** (suggestion) | Home starts from the global model and adapts to itself | Fits each home better; local copy can drift; a poisoned local update has more influence |
+
+**Not yet decided. Record the choice.** It matters most under non-IID, so it connects directly to Candidate 1 (MBRL vs. model-free stabilization under non-IID). Related question: do homes keep learning after deployment, or is training frozen at deployment?
+
+### 5. Prepared answers (committee)
+- **Where does learning happen?** At the homes. The server only averages.
+- **Do homes keep learning after deployment?** Open; see options A and B.
+- **What does the server's model do?** It is a combined starting point for the homes.
+- **One-paragraph version:** "The agent lives in each home and learns from that home's data. Federated learning is the training procedure: homes periodically send weights, the server averages them, and the averaged model goes back. The server never sees traffic and never learns from data directly."
+
+### 6. Open items from this update
+1. Decide option A vs. B (global as is vs. local fine-tuning) and record it; consider running both as arms in the Candidate 1 experiment.
+2. Decide whether homes keep learning after deployment.
+3. Carry forward all open items from Updates 1 to 18.
