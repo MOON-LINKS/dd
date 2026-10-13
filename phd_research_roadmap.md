@@ -2028,3 +2028,114 @@ Analogies: pizza shops improving their own recipes while head office only averag
 1. Decide option A vs. B (global as is vs. local fine-tuning) and record it; consider running both as arms in the Candidate 1 experiment.
 2. Decide whether homes keep learning after deployment.
 3. Carry forward all open items from Updates 1 to 18.
+
+
+# UPDATE — 13 Oct 2026 (new section only; everything above is unchanged)
+
+## Part 1. Future Work: PRI Jitter (recommendation only)
+
+**What PRI is:** Pulse Repetition Interval, the time between radar pulses. PRI jitter is random variation in that time (radar uses it so the pulse pattern is hard to predict or fake).
+
+**Recommendation: do NOT add it as a core part of the thesis. Park it as future work or a small ablation.**
+- It is a signal property, not an algorithm. It is only useful as a feature, an observation model, or an attacker setting.
+- IoT versions of the same idea: devices that send regular heartbeats (like a steady PRI), botnet "beaconing" that attackers jitter to hide, and several periodic devices mixed together behind a hub (radar "deinterleaving" is like separating them).
+- MMPP already models changes in arrival rate. Whether interval-regularity features add anything extra is an open question, so test it as an ablation: GRU with and without interval-regularity inputs.
+- Not novel by itself (inter-arrival-time and beaconing features are common in intrusion detection), so it should not be presented as a contribution.
+- Possible later links: attacker timing jitter in the self-play idea (Idea F), and device separation at hubs (identity thread).
+
+**Status:** paused. Revisit only after Papers 1 and 2 are stable.
+
+---
+
+## Part 2. Quick Q&A for Meeting Prep (plain English)
+
+Marked **[Decided]** where the roadmap already settled it, **[Suggestion]** where it is my proposal, **[Open]** where nobody has decided yet.
+
+### Q1. The agent has 3 states (normal, attack, 0-day). How does it know the attack type (DoS, Mirai, etc.)?
+- Three states is too few. Use: normal, a few attack families (DoS/DDoS, recon, spoofing, Mirai/malware), and "unknown" (the 0-day state). Families, not every variant. [Suggestion]
+- The agent never sees the true state. It sees signals and builds a **belief** (probabilities over the states). That is why it is a POMDP, not a plain MDP. [Decided]
+- "Unknown" = traffic looks odd (big prediction error from the GRU) but no known family explains it.
+- The action depends on the whole belief, not on a lookup table. Example: mostly one known family means a family-specific response; high "unknown" means a cautious step like throttling.
+- The federated weights are the numbers inside the networks that form the belief and pick the action. They do not store "DoS means block".
+
+### Q2. Why MBRL and not plain RL, if simulation is cheap?
+- Cost alone is a weak argument; a committee will say so.
+- Reason 1: the simulator is only a model (MMPP), so a policy trained there can fail on real homes. Real interaction is not cheap (blocking a device annoys the user). A world model learned from real traffic cuts the real interaction needed.
+- Reason 2 (the strong one): the GRU's prediction error IS the "something is unusual" signal the POMDP uses. A model-free agent has no such signal.
+- Be honest: include a recurrent model-free PPO baseline. Whether MBRL helps is tested in Candidate 1. If experiments are simulation-only, the cost argument mostly disappears and Reason 2 carries the case.
+
+### Q3. Why federated? (the order of reasons)
+- 1st: **bandwidth and scale** (sending all raw traffic from a whole fleet is expensive; weights are sent only each round). Measure it, do not assume it.
+- 2nd: **data-minimization rules** in many countries (verify the exact legal wording for your countries before citing).
+- 3rd: **privacy**, said narrowly: raw traffic stays at home, but weights can leak some information, so no formal privacy guarantee is claimed.
+- Weak point: RAIDEN already uses small arrival-rate summaries, so the bandwidth argument is weaker than for raw packets. [Decided order; wording is mine]
+
+### Q4. The POMDP already uses a Markov chain. Will MMPP use the same states? Where do the arrival rates come from?
+- Simplest design: keep them as two separate parts of one hidden state. [Suggestion]
+  - Threat state: normal, known families, unknown.
+  - Traffic regime: the MMPP phase (for example low-rate vs burst).
+- The belief covers both. Do not force MMPP phases to also mean threat states.
+- Rates and thresholds: **fit them from real traces** (CICIoT2023, N-BaIoT) with maximum likelihood or EM, not by hand. Per-device-type fits may be needed. The agent then uses the model's likelihood/residual, not fixed cutoffs.
+- [Open] whether the fitted rates are shared across homes in federation or kept local.
+
+### Q5. What does the word "model" mean here?
+It means several different things. Say which one:
+- **World model:** predicts what happens next (the GRU). This is the "model" in model-based RL.
+- **Traffic model:** MMPP, the statistical description of arrivals.
+- **Policy:** maps belief to action (the PPO network).
+- **Belief/POMDP model:** the hidden states, observations and transitions.
+- **Weights:** the numbers inside the networks. These are what federated learning averages.
+- **Global model:** the server's averaged copy of the weights.
+Tip for the proposal: always write "world model", "traffic model", "policy network" or "global model", never just "model".
+
+### Q6. Where does the model run? Which layer is federated learning for?
+- The MBRL agent runs **in the home** (most likely on the hub), learns there, and acts there. [Open: hub vs device vs cloud; measure inference cost]
+- The server only **averages weights**. It never sees traffic and never runs the agent.
+- Layers (from Update 12): inside one home = MBRL agent; across many homes = federated learning; smart city = coordination only inside clusters that share infrastructure, federated across clusters that do not.
+- Running the agent in the cloud is a bad fit: it means sending raw traffic out (loses the bandwidth and rules reasons) and adds delay. Speed alone is not the argument, since cloud delay is small next to detection delay.
+- One sentence: "The agent runs and learns in each home. Federated learning is the periodic exchange of weights through a server that only averages."
+
+### Q7. Is the model one per home, or one for Zigbee and one for Wi-Fi talking to each other?
+- Papers 1 and 2: **one agent per home**. [Decided]
+- Paper 3: the home's agent is split per protocol segment (Wi-Fi, Zigbee/Z-Wave) and they share beliefs. [Decided]
+- But the pilot showed a single combined agent is the ceiling inside one box. Splitting is justified only when the segments are really separate boxes, owners, or action authorities.
+
+### Q8. Does PPO update automatically online, or manually when we want?
+- Neither extreme. [Suggestion]
+- Train in rounds: local updates at each home, then federated merging on a schedule.
+- Keep the deployed policy frozen between rounds, and test an update before it replaces the running one.
+- Avoid constant per-step learning in a real home: a bad update could cut off legitimate devices, and a poisoned update would have more influence.
+
+### Q9. Who runs PPO: the home or the cloud? (a common mix-up)
+- **The home.** PPO runs locally on that home's traffic and imagined rollouts.
+- The cloud server does **not** run PPO and does not see simulations or feedback. It only averages the weights the homes send.
+- The "Claude v1 to v2" picture fits the release process (new version replaces old one), not the training: the homes do the learning.
+
+### Q10. So each home is upgraded twice?
+- Yes, as "upgraded", not "trained twice":
+  1. **Local upgrade:** the home's PPO improves its own model (this is where learning happens).
+  2. **Global upgrade:** the server averages the homes' weights into a new global model that replaces the home's model (option A) or becomes its starting point for more local training (option B).
+- Order each round: local first, global second, then the next local round starts from the global model.
+- The server merges (usually averages, often weighted by data amount). It does not judge each home's weights one by one. Screening suspicious updates is an extra add-on (Byzantine-robust aggregation), not the base design.
+- "Better" is not guaranteed: the average can be better for the fleet and worse for one home, especially when homes differ (non-IID). That is what Candidate 1 tests.
+
+### Q11. Before releasing a new global model, do we test it? Is the per-home check manual or automatic?
+- Yes, test before release. [Suggestion]
+- Automatic, server side: run the candidate in the twin and on held-out data for several home types (for example camera-heavy, lock-heavy, many-device). Set the pass thresholds BEFORE running (no home type worse by more than a margin; false-isolation rate under a limit).
+- Automatic, on the device: the home runs the candidate in "shadow mode" (it scores traffic but does not act) and adopts it only if it is not worse than the current model.
+- Manual: a person signs off the release and keeps a rollback to the previous version.
+- The server cannot check real home data (it never sees it), so the real per-home check has to run inside the home.
+- Limits: fixed thresholds can miss a home type nobody profiled; quiet homes may not give enough data for a reliable comparison; option A (use global as is) conflicts with a home rejecting a candidate.
+- Caution: "better in the twin" is simulated evidence, not proof. Use held-out real data where possible and report per-home results, not only the average.
+
+### Q12. What is still undecided (say this honestly in the meeting)
+1. After each round, does a home run the global model as is (A) or fine-tune locally (B)? Do homes keep learning after deployment?
+2. Where the agent runs: hub, device, or cloud.
+3. What exactly is federated: only the policy, or also the world model and belief parts.
+4. Whether MMPP rates are shared across homes or local.
+5. Whether the release gate and shadow-mode check are adopted.
+
+## Open items from this update
+1. Record decisions for the five items in Q12.
+2. Park PRI jitter until Papers 1 and 2 are stable; if revisited, run it as an ablation only.
+3. Carry forward all open items from Updates 1 to 18 and the 12/10 section.
