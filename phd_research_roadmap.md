@@ -2139,3 +2139,101 @@ Tip for the proposal: always write "world model", "traffic model", "policy netwo
 1. Record decisions for the five items in Q12.
 2. Park PRI jitter until Papers 1 and 2 are stable; if revisited, run it as an ablation only.
 3. Carry forward all open items from Updates 1 to 18 and the 12/10 section.
+
+
+# UPDATE — 13 Oct 2026, Part 2 (new section only; everything above is unchanged)
+
+## More Likely Committee Questions, Short Plain-English Answers
+
+**Status:** meeting-prep notes. Answers are short and honest. Where the roadmap has not decided something, the answer says so. Claims about prior work rest on abstract/snippet-level searches, not a full database sweep.
+
+---
+
+### A. The idea and the novelty
+
+**Q. What is new here? Isn't this just combining existing models?**
+Each piece exists, but the combination solves something the pieces do not solve alone. The GRU's prediction error IS the POMDP's "unusual traffic" signal, so one depends on the other. And Candidate 1 asks an open question: does model-based learning reduce the extra training time that federation costs under non-IID data? Not yet confirmed by a full database search.
+
+**Q. How is this different from existing zero-day IDS papers?**
+Most detect or classify. This agent holds a belief, including an explicit "unknown attack" state, and takes graded actions (throttle before isolate). The closest papers (Q-BIRD, FedAtten-DRL, Siamese + PPO) each lack part of that, as far as the abstracts show.
+
+**Q. Is a zero-day really detected?**
+Not truly. The honest wording is "novel relative to training". Leave-one-family-out tests attack-class shift, not real zero-days, so also use temporal and cross-dataset splits.
+
+---
+
+### B. The method
+
+**Q. Why a POMDP and not a plain MDP?**
+The agent never sees the true state, only partial signals like traffic stats. A belief over hidden states handles that.
+
+**Q. Why PPO and not DQN?**
+PPO updates the policy more stably, and there is precedent in belief-based defense (BF-PPO). Present it as a choice to test, not a proven win.
+
+**Q. How does the agent act when it is not sure?**
+It uses graded actions tied to confidence: for example throttle when the belief is mixed, isolate only when it is high. The cost of a wrong action sits in the reward.
+
+**Q. What is the reward?**
+[Open] Not defined yet. It needs a cost for missed attacks, for false isolation of legitimate devices, and for disruption from responses.
+
+---
+
+### C. Data and evidence
+
+**Q. Your data is simulated. Why trust it?**
+It is calibrated against real traces (CICIoT2023, N-BaIoT), and final results must come from real held-out data. Simulation is used for training, not as proof.
+
+**Q. Static datasets cannot respond to actions. How do you train RL on them?**
+They cannot, so the MMPP simulator or twin is the interactive environment. The datasets calibrate it and evaluate on held-out real attacks.
+
+**Q. No dataset has cross-protocol pivots. Is that a problem?**
+Yes. The plan is real benign multi-protocol topology plus injected, documented pivots, with sensitivity sweeps. State plainly that this is synthetic evidence on real topology.
+
+---
+
+### D. Federation
+
+**Q. Isn't federated learning worse than centralized?**
+Often it converges slower, so a centralized baseline measures exactly what federation costs. Paper 2 asks whether a model-based agent shrinks that cost.
+
+**Q. What does non-IID mean here?**
+Different homes see different traffic, so their local models drift apart. Averaging drifted models can be slower or less stable.
+
+**Q. Is it private?**
+Only partly. Raw traffic stays local, but weights can leak information. Secure aggregation or differential privacy are bounded extensions; no formal guarantee is claimed.
+
+**Q. What if a home lies or is compromised?**
+Not covered in the core papers. Byzantine-robust belief fusion is the backup contribution.
+
+---
+
+### E. Paper 3 and deployment
+
+**Q. Why multi-agent at all?**
+Only for pivots across a shared hub that outrun a federated round. The pilot showed a single combined agent is the ceiling in one box, so splitting is justified only where segments are physically separate.
+
+**Q. Can a small IoT device run this?**
+[Open] Unknown. Measure GRU inference time on hub-class hardware before choosing hub, device or cloud.
+
+**Q. What if detection is too slow?**
+Then Paper 3 matters less. The latency test showed detection delay is the main bottleneck, so Paper 1's speed caps everything.
+
+---
+
+### F. The thesis as a whole
+
+**Q. Is this too much for one PhD?**
+It is large. The path is three papers, with the twin, XAI and Byzantine ideas held back as extensions, and Paper 1 is the core.
+
+**Q. What if a result is negative?**
+That is acceptable and planned for. Candidate 1 is meaningful either way: either MBRL helps, or you report the cost.
+
+**Q. What would you do first?**
+Run the database novelty sweep, read FedAtten-DRL and Q-BIRD, build Paper 1 on CICIoT2023, and write the threat model.
+
+---
+
+### Open items from this update
+1. Define the reward and cost model (Q: What is the reward?).
+2. Measure inference cost on hub-class hardware.
+3. Carry forward all open items from Updates 1 to 18, 12/10 and 13/10 Part 1.
