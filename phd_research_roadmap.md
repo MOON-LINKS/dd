@@ -2237,3 +2237,196 @@ Run the database novelty sweep, read FedAtten-DRL and Q-BIRD, build Paper 1 on C
 1. Define the reward and cost model (Q: What is the reward?).
 2. Measure inference cost on hub-class hardware.
 3. Carry forward all open items from Updates 1 to 18, 12/10 and 13/10 Part 1.
+
+
+
+# UPDATE 19 — 15 Oct 2026 (new section only; everything above is unchanged)
+
+## Proposal Blueprint (4 to 5 pages): Gaps First, Each Gap Tied to the Paper That Pointed to It
+
+**Status:** the thesis topic is accepted; this section is the outline for the written proposal sent to the security and PhD doctoral school. It replaces the "Proposal PPT Blueprint" focus of Update 11 with a written-proposal focus on gaps and evidence.
+
+**Honesty rule for every row below:** READ = abstract/snippet seen or text seen in this roadmap; VERIFY = authors, numbers or wording must be checked against the full text before they go into the proposal. Nothing here was read in full text. Where a paper's "simulation output" is quoted, it is the figure the source reported, not something re-run here. A reviewer who checks one wrong number will distrust the rest, so verify first.
+
+**Working title (from Update 15, not final):** *Belief-Driven Defense Against Novel Attacks in IoT: Federated and Multi-Agent Reinforcement Learning Across Heterogeneous Devices and Protocols*
+
+---
+
+## 0. Page budget
+
+| Section | Pages | Content |
+|---|---|---|
+| 1. Introduction and real use cases | 0.75 | Scenario, why now, what RAIDEN already did |
+| 2. Problem statement, aims, objectives | 0.75 | One problem, four research questions, objectives |
+| 3. Gaps and the papers that opened them | 1.5 to 2 | Four gaps, each with evidence, source and what it leaves open |
+| 4. Proposed approach (short) | 0.5 | Main path and the three comparisons |
+| 5. Expected outputs and contributions | 0.5 | Comparative results, benchmark, system |
+| 6. Plan and risks, references | 0.5 | Timeline, validation gate, key references |
+
+If it runs long, cut section 4 first; sections 3 and 5 are what the professor asked for.
+
+---
+
+## 1. Introduction (points to build the text from)
+
+**Real-time use cases to open with (pick two, keep them concrete):**
+1. **Hub pivot in one home:** a Wi-Fi device (camera or smart TV) is compromised through a known flaw, then used to reach a Zigbee smart lock that is not directly internet-reachable. A 2017 demonstration of exactly this chain (smart TV over Wi-Fi to a Zigbee lock) is in the roadmap (Update 8); authors and title still need to be looked up (VERIFY).
+2. **Fleet of one vendor's devices:** 500 smart locks in 500 homes; a new attack seen on 3 devices should help the other 497, without raw traffic leaving any home (Paper 2 example).
+3. **Botnet spread:** Mirai-style spread across devices; RAIDEN's own setting (MMPP traffic model plus GRU detecting malware spread).
+4. **Identity confusion at the hub:** many devices appear as one stream behind a hub or NAT; 38 Zigbee/Z-Wave devices sit behind 5 hubs in CICIoT2023.
+
+**Introduction flow:**
+- IoT devices multiply; most defenses detect and classify, they do not decide and act under uncertainty.
+- Novel attacks have no known signature; detectors trained on known classes degrade on shift.
+- Real homes mix protocols (Wi-Fi, Zigbee, Z-Wave) through shared hubs, yet defenses are mostly single-protocol.
+- Vendors want fleet-scale learning without centralizing raw traffic.
+- Baseline already completed: RAIDEN (MMPP traffic model plus GRU for malware-spread detection); this thesis extends it from detection to belief and action.
+
+---
+
+## 2. Problem, aims, objectives
+
+**Problem statement (one sentence):** IoT defenses cannot yet decide, under partial observability, how to respond to novel attacks that may cross protocol boundaries inside a home, and it is unknown what it costs to scale such a defender across a fleet or to split it across protocols.
+
+**Aim:** design and evaluate a belief-driven defense agent for IoT that (a) holds an explicit belief about unseen and novel attacks, (b) defends against cross-protocol pivots inside a home, and (c) scales across a device fleet, with measured accuracy and cost trade-offs at every step.
+
+**Research questions (ordered as the professor's four ideas):**
+- **RQ1, zero-day belief:** can a POMDP agent with an explicit "unknown attack" belief state, a GRU/MMPP world model and PPO policy take better graded actions on novel attacks than detection-only or belief-free baselines?
+- **RQ2, cross-protocol:** can it defend a home against a compromise that crosses a protocol boundary through the hub (Wi-Fi to Zigbee/Z-Wave), where single-protocol defenses see nothing?
+- **RQ3, federation:** what does federating this agent across homes gain and cost compared with centralized training, under non-IID traffic?
+- **RQ4, RL vs MARL (and model-based vs model-free):** inside one smart home, does splitting the agent per protocol segment (MARL) beat a single agent (RL), and at what cost? Does model-based RL reduce the cost of federation compared with model-free RL?
+
+**Objectives:**
+1. Build the belief-driven agent (POMDP, PPO or BF-PPO, GRU/MMPP world model) and evaluate it on real datasets with leave-one-family-out, temporal and cross-dataset zero-day protocols.
+2. Define a threat model and build a cross-protocol pivot benchmark (real benign multi-protocol topology plus documented injected pivots) and evaluate defenses on it.
+3. Train the agent federated across homes with IID and non-IID client splits; compare to centralized training.
+4. Run three controlled comparisons (MBRL vs RL, MARL vs RL, federated vs centralized) with one shared accuracy-and-cost protocol.
+5. Gate every federated release through a shadow check or a twin test before deployment.
+
+---
+
+## 3. Gaps and the papers that opened them
+
+For each gap: what the proposal says, the source, what the source reported, and what it leaves open.
+
+### Gap 1: Novel-attack decisions without a belief over hidden state
+**Claim to write:** detection-style zero-day systems and belief-based defenders exist separately; none found combines an explicit novelty state in the belief with graded actions in IoT.
+
+| Source | What it reported / does | What it leaves open | Status |
+|---|---|---|---|
+| Hammar and Stadler, operational-technology intrusion response (POMDP, PPO variants including belief-based BF-PPO) | Closest method: POMDP formulation with PPO solvers | OT domain, no zero-day layer, not federated | Seen in roadmap (Update 1); VERIFY full text |
+| Siamese network + PPO cross-dataset zero-day IDS (2025/26) | Zero-day IDS with PPO adaptive-defense policy; reported 2.21% false-positive rate | No belief state, not federated | Snippet-level; VERIFY number |
+| Q-BIRD, belief-conditioned PPO for V2X cyber defense (arXiv 2606.07796) | PPO driven by belief over attacker intent in a partially observable setting | V2X, single agent, no world model, novelty not a state | Snippet-level |
+| DQN-IDS; DeepEdgeIDS; CyDER 2.0 | Anomaly or uncertainty used as a feature or framing with RL | Novelty is a feature, not a hidden state | Snippet-level; read CyDER 2.0 and DQN-IDS first |
+| Open-set and held-out-label IDS (MI2DAS; Jahangir et al.) | Reject held-out classes as unknown | Classification, not sequential decisions | Snippet-level |
+
+**Honest limit to state in the proposal:** leave-one-family-out tests shift between attack classes, not true zero-day behavior; combine it with temporal and cross-dataset splits.
+
+### Gap 2: Cross-protocol compromise inside the home is open
+**Claim to write:** a compromise crossing from a Wi-Fi device to a Zigbee/Z-Wave device through the hub is a documented real attack, but datasets, detectors and RL defenses do not cover it.
+
+| Source | What it reported / does | What it leaves open | Status |
+|---|---|---|---|
+| 2017 demonstration: smart TV compromised over Wi-Fi, then used against a Zigbee smart lock on the same hub | A working cross-protocol pivot | Attack shown, no defense or dataset | Authors/title not captured; VERIFY |
+| 2026 Z-Wave dataset paper reviewing 30 IoT datasets | Lists lack of support for multi-protocol analysis among 22 shortcomings | Gap stated by the dataset community itself | Snippet-level; VERIFY authors |
+| Shafi (2024), York University MSc thesis, dual-tier graph-learning detector for IP and Z-Wave traffic | Own multi-protocol dataset; its own shortcomings list names missing Zigbee/Z-Wave consideration, multi-modal data and protocol-specific attacks; lateral movement or pivoting not listed | Parallel streams, no tracking of a compromise crossing the hub; dataset release status unknown | Read in part (Update 10) |
+| BRIDGE/TCH-Net (2026), cross-domain IoT botnet benchmark | Detection degrades across network environments; baseline mean leave-one-domain-out F1 about 0.56 | Cross-environment weakness shown, not cross-protocol pivots | Snippet-level; VERIFY |
+| Das and Nair (2026), multi-stage smart-home attack dataset | 178,831 samples, 7 MITRE-Caldera multi-stage scenarios, baseline RF multiclass accuracy 0.775 | Wi-Fi only, attacker inside the LAN, IPs/ports removed so no device graph | Read (Update 10) |
+| Andreou et al. (2025), CTDE multi-agent moving-target defense against cross-slice lateral movement (6G) | MARL against lateral movement across a boundary | Network slices, not heterogeneous IoT protocols | Snippet-level; closest MARL neighbor |
+| Landolt et al. (2025), MARL in cybersecurity survey | MARL for lateral-movement containment is established | Enterprise networks and cyber gyms | Snippet-level |
+| Hierarchical MARL on CAGE-4 | Simulated enterprise defense | Not IoT, no protocol boundary | Snippet-level |
+
+**Not found in these searches:** any work combining MARL, security and hub-mediated cross-protocol pivots. This is a first-pass web sweep, not a database sweep; state it as "none found" and run the sweep before submission.
+
+**Evidence the pivot speed matters (use carefully):** enterprise breakout time averaged 29 minutes in 2025 with a fastest case of 27 seconds (CrowdStrike 2026 Global Threat Report, press-release level; VERIFY against the report). No IoT or hub-specific pivot timing was found, so say the pivot speed is a scenario parameter.
+
+### Gap 3: What federation costs for a decision-making defender under non-IID traffic
+**Claim to write:** federated IDS work mostly federates detectors; the cost of federating a decision-making agent, and whether model-based learning reduces it, is not measured in security.
+
+| Source | What it reported / does | What it leaves open | Status |
+|---|---|---|---|
+| FRL-IPS, federated DDQN intrusion prevention across SDN domains (Flower framework, IID and non-IID) | Federated training reached prevention comparable to centralized at steady state, but needed more training to stabilize, and heterogeneity increased instability and stabilization time | Model-free; no belief, no zero-day, no identity ambiguity; unit of "stabilization time" not yet checked | Quoted line only (Update 8); read experiment section |
+| Belarbi et al., federated deep learning for IoT intrusion detection | Reports sizable performance loss under non-IID data (about 50% in the snippet) | Detection only | Snippet-level; VERIFY the figure |
+| Federated Ensemble Model-based RL (general RL, around 2021, VERIFY) | Federated dynamics-model ensemble with the policy trained on the model | Not security, not belief-based, not non-IID security traffic | Abstract-level; cite as general precedent |
+| FedAtten-DRL (federated DRL for IoT NIDS, with PPO) | Federated DRL with zero-day aim | No belief or world model; detection-style | Snippet-level |
+| FMARL (Computer Communications, 2026) | Federated multi-agent RL for intrusion detection, non-IID | Classification framing, DQN | Snippet-level |
+| FMADRL moving-target defense for UAV swarms (arXiv 2506.07392) | Federated multi-agent POMDP defense | UAV DoS, not IoT zero-day | Snippet-level |
+| Amamou et al., AINA 2026 | Federated learning (FedProx), GRU and an agentic component for IoT attack detection (from the abstract) | Full text unread; no belief or RL mentioned in the abstract | Abstract only; get the PDF |
+| FedPPO-PG (smart grid) | Federating PPO with centralized critic | Not security | Seen in roadmap (Section 13) |
+
+**Do not claim:** first federated RL for IoT zero-day (FedAtten-DRL), first belief-conditioned PPO in cyber defense (Q-BIRD, Hammar and Stadler), first federated multi-agent POMDP defense (FMADRL), first federated MBRL (Federated Ensemble MBRL).
+
+### Gap 4: The price of splitting the defender by protocol (RL vs MARL), unmeasured
+**Claim to write:** MARL is established for network defense, but no one has measured, for a single smart home, what splitting the defender per protocol segment gains or costs against one combined agent.
+
+| Source | What it reported / does | What it leaves open | Status |
+|---|---|---|---|
+| MARL cybersecurity survey; H-MARL on CAGE-4; Andreou et al. | MARL defense works in simulated enterprise and slice settings | No single-vs-split comparison in a multi-protocol home | Snippet-level |
+| MARL on multi-protocol gateways (resource allocation, data collection) | Gateway-as-agent architecture has precedent | Not security | Snippet-level |
+| Own pilot (this roadmap, Update 16 follow-up, toy threshold policies, one tuning seed) | A single combined agent is the ceiling for split agents with sharing when delay and loss are zero; separation costs delay, which bites only for fast pivots | Hand-built policies, assumed timings; needs learned policies and measured costs | Own result; treat as motivation, not evidence |
+
+---
+
+## 4. Proposed approach (half a page, points only)
+
+**Main path:**
+1. **Believe:** per-home agent with POMDP belief including an unknown-attack state; GRU/MMPP world model; PPO or BF-PPO. Observation grouped into fixed protocol-segment slots with a presence mask so it can be split later (Update 15 constraint).
+2. **Defend across protocols:** extend the belief to a compromise crossing the hub; threat model with three attacker scenarios (automated seconds-scale, human-operated minutes-scale, slow and stealthy).
+3. **Scale:** train federated across homes (FedAvg or FedProx) with IID and non-IID splits.
+4. **Validation gate before every federated release:** shadow check (the home scores traffic with the candidate model but takes no actions, adopts only if not worse) and a twin or held-out test across home types, with a human sign-off and rollback. [Interpretation: "shadow learning" is read here as shadow mode; confirm with the professor if you meant something else.]
+
+**Three controlled comparisons, one shared protocol:**
+
+| Comparison | Arms | Setting |
+|---|---|---|
+| **MBRL vs RL** | World-model agent vs recurrent model-free PPO | Centralized and federated, IID and non-IID |
+| **MARL vs RL** | Per-protocol agents with belief sharing vs one factored agent vs independent agents (floor) | One smart home with a shared hub |
+| **Federated vs centralized** | Same agent trained both ways (FedAvg, FedProx) | Non-IID client splits |
+
+**Shared accuracy-and-cost protocol (answers "higher accuracy, at what cost"):**
+- Accuracy side: detection, time to contain, false isolation rate of legitimate devices, novel-attack performance (leave-one-family-out, temporal, cross-dataset).
+- Cost side: training time to stabilize (define the unit: rounds, episodes or environment steps, after checking FRL-IPS), communication bytes (federated per round and in-home belief messages), inference time and memory on hub-class hardware, and critic or training cost as agents grow.
+- Fairness: equal tuning budget and same information for every arm, separate tuning and evaluation seeds, many seeds with spread reported, and a grid-edge check on every tuned parameter (lesson from the PMB tuning).
+
+**Data:** CICIoT2023 (zero-day and identity work), Edge-IIoTset (federated and non-IID), CIC IoT 2022 and Das and Nair (multi-protocol and multi-stage); injected, documented pivots on real benign topology for the cross-protocol benchmark. State plainly that injected pivots are synthetic evidence on real topology.
+
+---
+
+## 5. Expected outputs and contributions (points)
+
+1. **Belief-driven agent for novel attacks (main path):** a POMDP/PPO agent with an explicit unknown-attack belief and graded responses, evaluated with three zero-day protocols on real data.
+2. **Cross-protocol pivot benchmark and defense:** documented pivot scenarios on real multi-protocol topology, with a threat model and a defense evaluated on it. Citable artifact even if headline results are modest.
+3. **MBRL vs RL under non-IID:** measured accuracy and cost, benchmarked against the stabilization behavior reported by FRL-IPS. Meaningful whichever way it comes out.
+4. **Federated vs centralized:** a quantified price of federation (accuracy, stabilization time, bytes) for a decision-making defender.
+5. **MARL vs RL in a smart home:** a crossover map showing when splitting by protocol costs little or helps, and when one combined agent is better.
+6. **Release-gate procedure:** shadow-mode and twin check before each federated release, with per-home results.
+7. **Open artifacts:** the non-IID splitting protocol, the identity or pivot injection protocols, and the comparison scripts.
+
+**Honest framing for readers:** a negative or mixed result in any comparison is still a contribution, and the proposal should say that up front.
+
+---
+
+## 6. Plan, risks, references (points)
+
+**Risks to state in the proposal (they show the plan is credible):**
+1. Simulation trust: injected pivots and the MMPP simulator; mitigated by calibration to real traces, held-out injection styles and real held-out validation (an earlier MMPP dataset was rejected by the committee as untrusted).
+2. No labeled cross-protocol pivot data exists.
+3. Novelty claims rest on a first-pass web sweep; the IEEE Xplore, ACM and Scopus sweep is pending.
+4. Detection delay caps what the cross-protocol defense can achieve; Paper 1's speed matters.
+5. Scope is large; twin and XAI, Byzantine-robust fusion and the LMB/PMB identity work are held back as extensions.
+
+**Reference list to assemble (VERIFY each: authors, year, venue):** Hammar and Stadler; Siamese+PPO zero-day IDS; Q-BIRD; CyDER 2.0; DQN-IDS; DeepEdgeIDS; FRL-IPS; Federated Ensemble MBRL; FedAtten-DRL; FMARL (2026); FMADRL (UAV); Amamou et al. (AINA 2026); FedPPO-PG; Belarbi et al.; Shafi (York, 2024); Das and Nair (2026); BRIDGE/TCH-Net; the 2026 Z-Wave dataset review; the 2017 smart-TV-to-Zigbee-lock demonstration; Andreou et al. (2025); Landolt et al. (2025); CrowdStrike 2026 report; CICIoT2023, Edge-IIoTset, CIC IoT 2022 dataset papers; RAIDEN.
+
+---
+
+## 7. Ordering decision to record
+
+You listed the ideas as: (1) zero-day belief, (2) cross-protocol, (3) federated, (4) RL vs MARL. The earlier roadmap build order was Believe (Paper 1) then Scale (federated, Paper 2) then Coordinate (cross-protocol with MARL, Paper 3). Suggestion: write the proposal in your listed order (problem-driven, strongest gaps first), and keep the build order from Update 13 for the work plan. [Open: confirm with the professor.]
+
+## 8. Open items from this update
+1. Look up and verify every source in the gap tables against full text, starting with Hammar and Stadler, FRL-IPS (fix the unit of stabilization time), FedAtten-DRL, Q-BIRD, Amamou et al., Das and Nair, Shafi (rest of the thesis) and BRIDGE/TCH-Net.
+2. Run the IEEE Xplore, ACM and Scopus novelty sweep (query strings in Update 18) before the proposal is finalized.
+3. Confirm the meaning of "shadow learning" with the professor.
+4. Decide the per-home policy choice (global as is vs local fine-tuning) and the reward and cost model; both are still open.
+5. Convert sections 1 to 5 into proposal prose at the page budget; keep the gap tables as the core of section 3.
+6. Carry forward all open items from Updates 1 to 18, 12/10 and 13/10.
