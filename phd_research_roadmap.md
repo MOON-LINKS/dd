@@ -2430,3 +2430,149 @@ You listed the ideas as: (1) zero-day belief, (2) cross-protocol, (3) federated,
 4. Decide the per-home policy choice (global as is vs local fine-tuning) and the reward and cost model; both are still open.
 5. Convert sections 1 to 5 into proposal prose at the page budget; keep the gap tables as the core of section 3.
 6. Carry forward all open items from Updates 1 to 18, 12/10 and 13/10.
+
+
+
+# UPDATE 20 — 16 Oct 2026 (new section only; everything above is unchanged)
+
+## Note for Later: Small Conference-Paper Ideas With a Small Math Core and a Cheap Test
+
+**Status:** parked ideas, not part of the proposal's core scope. Each one is small enough for a short conference or workshop paper, has a compact mathematical core, and has a cheap test with a pass/fail rule fixed before running (same style as the B0/B1/PMB spoofing checklist in Updates 6 and 7). Everything marked "toy" or "idea only" is untested on real data. Related-work claims are first-pass and need the database sweep before any novelty is claimed.
+
+**Rules for all checklists below (carry over from earlier lessons):**
+- [ ] Set numeric pass/fail thresholds before running anything.
+- [ ] Separate tuning seeds from evaluation seeds; report mean and spread over many seeds.
+- [ ] Grid-edge check on every tuned parameter (widen until the winner is inside the range).
+- [ ] Equal tuning budget and equal information for every arm.
+- [ ] Label simulation results as simulation; validate on real held-out data where it exists.
+- [ ] A negative result is allowed and still reportable.
+
+---
+
+## Idea 1. Oracle vs identity-trusting vs identity-free belief under spoofing (already has toy results)
+
+**Core question:** how much does a pipeline lose when it trusts device identity, and does an identity-free belief filter recover it?
+**Small math:** cardinality error |N_hat - N| for the estimated vs true number of compromised devices; the gap between B0 (oracle, reads true identity) and B1 (trusts the identity hint) is the cost of identity ambiguity.
+**Existing toy result (Updates 6 and 7):** B0 flat, B1 rises with corruption (0.29 to 1.26 MAE), PMB and EntityRes stay flat and are statistically tied after fair tuning; PMB beat LMB after independent tuning.
+**Checklist for a paper-grade version:**
+- [ ] Replace the toy simulator with real CICIoT2023 identities and controlled corruption knobs (rotation rate, hub aggregation size, spoof-duplicate fraction, hidden-device fraction, fingerprinting error).
+- [ ] Add an adaptive attacker that mimics the measurement itself, not only the identity label (the toy test never covered this; Update 8 says so).
+- [ ] Add the independent per-device Bernoulli baseline (B3) to test whether the multi-object machinery is needed at all.
+- [ ] Re-tune LMB with the corrected wide grid (open item from Update 7).
+- [ ] Report OSPA or an equivalent multi-object distance, label switches, and false isolation rate.
+**Status:** toy results exist; real-data test not run. Positioning note: the claim is "identity as an unreliable sensor", not "better identification" (Update 8 correction).
+
+## Idea 2. Hub-visibility test: what the hub can and cannot attribute (idea only)
+
+**Core question:** at the hub, which sources can the model attribute (IP, MAC, timing) and where does attribution fail (IP change, MAC spoofing or randomization, cloud-relayed commands, simultaneous requests)?
+**Small math:** attribution accuracy as a function of the corruption knobs from Idea 1; for the IP-then-Zigbee chain, the probability that a Zigbee command is linked to the right triggering IP request when k requests arrive within the same window (ambiguity grows with k).
+**Checklist:**
+- [ ] Define the chain-linking rule (time window, ordering) and its failure cases.
+- [ ] Build a small testbed or simulation with controlled concurrent requests.
+- [ ] Measure linking accuracy versus window length and concurrency.
+- [ ] Compare against a no-linking baseline (each segment judged alone).
+**Status:** idea only.
+
+## Idea 3. Cross-protocol pivot latency: when does real-time sharing become necessary? (toy result exists)
+
+**Core question:** at what pivot speed and detection delay does a federated round-trip fail, and when is hub-local sharing needed?
+**Small math:** a prevention event happens when t_detect + t_share + t_act < t_pivot; with lognormal delays, P(prevent) = P(t_detect + t_share + t_act < t_pivot). For federated sharing, t_share is dominated by waiting for the next round (uniform over the round length), plus processing.
+**Existing toy result (Update 17):** with pivot-delay anchors from enterprise data (27 s fastest, 29 min average), federated prevention is 0.00 at 27 s and about 0.53 at 29 min for a 1 h round; hub-local is about 0.78 and 1.00; detection delay is the dominant term.
+**Checklist:**
+- [ ] Replace assumed timings with measured ones (GRU inference time on hub-class hardware, hub LAN latency, Zigbee/Z-Wave action times).
+- [ ] Source IoT-specific pivot timing, or measure it in the home testbed (Idea 6).
+- [ ] Add bursty loss and stale-belief decay to the sharing channel.
+- [ ] Report the crossover point (pivot speed where hub-local stops beating federated).
+**Status:** toy model only; all timings assumed except the cited enterprise anchors (press-release level, verify).
+
+## Idea 4. Price of separation: single agent vs split agents vs rule-based sharing (toy result exists)
+
+**Core question:** inside one smart home, what does splitting the agent per protocol cost compared with one combined agent, and does learned coordination beat a simple rule?
+**Small math:** price of separation = loss(A3) - loss(A1), as a function of delay, loss rate, coordinator compute limit and action authority. With zero delay and loss, A3 and A1 are the same function class, so A3 cannot beat A1 (Update 16 follow-up).
+**Arms:** A1 combined agent (ceiling), A2 independent agents (floor), A3 split agents with belief sharing, A5 hand-written rule ("if one segment's belief is high, tighten the other"), optional A4 third hub decider.
+**Checklist:**
+- [ ] Add the rule-based arm A5; if learned A3 cannot beat A5, MARL is optional.
+- [ ] Add physical-separation parameters: a smaller model on the coordinator, bursty loss, restricted action authority.
+- [ ] Repeat with learned policies (IPPO or MAPPO) over many seeds.
+- [ ] Define the message content (per-segment compromise probability, novelty belief, confidence, bridge flag) and its size.
+- [ ] Report accuracy and cost together (training time, message bytes, inference time).
+**Status:** toy result with hand-built threshold policies and one tuning seed only; not evidence about learning.
+
+## Idea 5. Cost of federating a decision-making defender: MBRL vs model-free under non-IID (idea only)
+
+**Core question:** does a world model reduce the stabilization time that federation adds under non-IID traffic?
+**Small math:** define stabilization time as the first round at which return stays within epsilon of its final value for w rounds; compare federated vs centralized, and MBRL vs recurrent model-free PPO, at each non-IID level. Non-IID level controlled by the Dirichlet alpha for label skew, plus device-type partition for feature skew.
+**Checklist:**
+- [ ] Read FRL-IPS's experiment section and use the same unit of stabilization time (rounds, episodes or environment steps).
+- [ ] Include the recurrent model-free PPO baseline and a centralized baseline.
+- [ ] Sweep alpha from near-IID to strongly non-IID; report mean and spread.
+- [ ] Compare FedAvg and FedProx.
+- [ ] Count communication bytes per round and in total.
+- [ ] Decide global-as-is vs local fine-tuning (12/10 decision) and run both as arms if cheap.
+**Status:** idea only; general federated MBRL exists outside security (do not claim "first federated MBRL").
+
+## Idea 6. Home testbed with real labeled pivots (idea only; most valuable single artifact)
+
+**Core question:** can a small isolated home testbed produce real, labeled cross-protocol traffic and real pivot timings?
+**Setup (suggestion):** isolated router or VLAN, local hub (Home Assistant) with a Zigbee USB stick, a few Zigbee devices (plug, bulb, door sensor), a Wi-Fi camera or plug; a laptop or Raspberry Pi plays the already-compromised IP device ("assume breach") and sends commands to the hub; use a plug as the lock stand-in.
+**Checklist:**
+- [ ] Get supervisor or ethics approval in writing.
+- [ ] Keep the test network isolated and short-range; own devices only.
+- [ ] Log IP-side traffic, hub logs and, if available, Zigbee-side traffic with timestamps and ground-truth labels.
+- [ ] Record benign days first (baseline), then scripted pivots at varied speeds and times.
+- [ ] Release a small documented dataset with its limits stated (one home, few devices).
+**Status:** idea only.
+
+## Idea 7. Shadow-mode release gate for federated updates (idea only)
+
+**Core question:** does a shadow-mode check plus a twin test catch bad global models before they reach homes?
+**Small math:** adoption rule per home: adopt candidate theta_new only if a score on recent local data satisfies S(theta_new) >= S(theta_current) - delta, with S including false isolation rate; server-side gate: no home profile may degrade by more than a margin versus the previous version.
+**Checklist:**
+- [ ] Fix delta and the profile margin before running.
+- [ ] Inject a deliberately bad candidate (poisoned or over-averaged) and measure how often the gate blocks it.
+- [ ] Measure false blocks of good candidates.
+- [ ] Test quiet homes with little data (shadow comparison may be unreliable there).
+- [ ] Report per-home results, not only the mean.
+**Status:** idea only; "shadow learning" is read here as shadow mode, to be confirmed with the professor.
+
+## Idea 8. Lying agents and poisoned beliefs (Byzantine extension; idea only)
+
+**Core question:** can a KL-divergence check between local beliefs and fleet or neighbor consensus detect and down-weight a lying agent?
+**Small math:** for belief distributions p_i and consensus q, flag agent i when KL(p_i || q) exceeds a threshold tau; weight w_i decreases as KL grows.
+**Checklist:**
+- [ ] Extend the threat model to include lying agents or poisoned updates (currently out of scope).
+- [ ] Choose attack types: constant "all normal", random, and slowly drifting lies.
+- [ ] Measure detection rate vs false down-weighting of honest but unusual homes (non-IID homes can look like liars).
+- [ ] Compare with standard robust aggregation (median or trimmed mean).
+**Status:** idea only; crowded field (backup contribution).
+
+## Idea 9. Interval-regularity features (PRI-style jitter) as an ablation (idea only)
+
+**Core question:** do inter-arrival regularity or jitter features add information beyond MMPP rate states for novelty detection?
+**Small math:** per device, compute the coefficient of variation of inter-arrival times over a window; a jittered beacon raises it while a rigid heartbeat keeps it near zero.
+**Checklist:**
+- [ ] Run the GRU with and without interval-regularity inputs on CICIoT2023 or N-BaIoT.
+- [ ] Test an attacker that adds timing jitter to a beacon.
+- [ ] Do not present as a contribution on its own (inter-arrival features and beaconing detection are common).
+**Status:** parked; recommendation from the 13 Oct update.
+
+---
+
+## Quick ranking for choosing a first small paper (suggestion, my judgment)
+
+| Idea | Math core | Cost to test | Existing toy result | Fit for a short paper |
+|---|---|---|---|---|
+| 1. Identity oracle vs PMB/EntityRes | Small | Low | Yes | Strong, needs real-data test and adaptive attacker |
+| 3. Pivot latency crossover | Small | Low | Yes | Good once timings are measured |
+| 4. Price of separation | Small | Medium | Yes (hand-built policies) | Good, needs the rule-based arm |
+| 6. Home testbed dataset | None | Medium (hardware) | No | Strong as a dataset or short data paper |
+| 5. MBRL vs model-free under non-IID | Small | Medium to high | No | Candidate 1; may belong in Paper 2 |
+| 7. Release gate | Small | Medium | No | Possible workshop paper |
+| 8. Lying agents | Small | Medium | No | Backup |
+| 2. Hub visibility | Small | Medium | No | Pairs with Idea 6 |
+| 9. Interval features | Small | Low | No | Ablation only |
+
+## Open items from this update
+1. Pick which ideas stay inside the thesis papers and which become separate short papers, to avoid splitting the same result across two publications.
+2. Run the database novelty sweep for each idea before claiming novelty.
+3. Carry forward all open items from Updates 1 to 19, 12/10 and 13/10.
