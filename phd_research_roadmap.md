@@ -2576,3 +2576,126 @@ You listed the ideas as: (1) zero-day belief, (2) cross-protocol, (3) federated,
 1. Pick which ideas stay inside the thesis papers and which become separate short papers, to avoid splitting the same result across two publications.
 2. Run the database novelty sweep for each idea before claiming novelty.
 3. Carry forward all open items from Updates 1 to 19, 12/10 and 13/10.
+
+
+# UPDATE 21 — 16 Oct 2026 (new section only; everything above is unchanged)
+
+## More Small Conference/Workshop Ideas, Each Linked to the Proposal
+
+**Status:** parked ideas, continuing the numbering of Update 20 (Ideas 1 to 9). None is strong enough alone for a main publication; each is a small study with a compact math core and a cheap test, and most can also live as an ablation inside a thesis paper. All are untested; related-work claims need the database sweep first. The shared rules checklist from Update 20 applies to every idea here (thresholds fixed before running, separate tuning and evaluation seeds, grid-edge check, equal tuning budget, simulation labeled as simulation, negative results allowed).
+
+**Link key:** P1 = zero-day belief agent, P2 = federation, P3 = cross-protocol and RL vs MARL, GATE = release gate, BENCH = cross-protocol benchmark.
+
+---
+
+## Idea 10. Is the "unknown attack" probability calibrated? (links P1)
+**Question:** when the belief says "unknown = 0.6", is the traffic really novel about 60% of the time?
+**Small math:** expected calibration error, ECE = sum over bins of (n_b / n) * |accuracy_b - confidence_b|; test with temperature scaling on the novelty output.
+**Checklist:**
+- [ ] Build held-out sets with known-novel and known-familiar traffic (leave-one-family-out, plus temporal and cross-dataset splits).
+- [ ] Report reliability diagrams and ECE before and after calibration.
+- [ ] Check calibration drift when the traffic regime shifts.
+**Why it helps the proposal:** graded actions only make sense if the belief numbers mean something.
+
+## Idea 11. Reward and cost sensitivity: false isolation vs missed attack (links P1, P3)
+**Question:** how much does the learned policy change as the cost ratio between a false isolation and a missed attack changes?
+**Small math:** reward R = -c_miss * (missed compromise) - c_fi * (false isolation) - c_dis * (disruption); sweep the ratio c_fi / c_miss and plot the Pareto front of containment time vs false isolation rate.
+**Checklist:**
+- [ ] Fix the sweep range before running.
+- [ ] Compare the learned policy with a fixed-threshold baseline at matched false isolation.
+- [ ] Report the policy's graded actions per region of the front.
+**Why it helps the proposal:** closes the open reward and cost model item.
+
+## Idea 12. Belief-message size vs defense quality (links P3)
+**Question:** how small can the in-home belief message be before coordination breaks?
+**Small math:** quantize each belief value to b bits; message size = segments x fields x b; plot defense loss vs bits per message.
+**Checklist:**
+- [ ] Define the message fields (compromise probability, novelty belief, confidence, bridge flag).
+- [ ] Sweep bits and update rate; include a no-sharing floor and full-precision ceiling.
+- [ ] Combine with the loss and delay sweep from Update 17.
+**Why it helps the proposal:** gives the cost side of the MARL vs RL comparison a concrete number.
+
+## Idea 13. Stale beliefs: how fast should shared confidence decay? (links P3)
+**Question:** when the sharing channel drops messages, how should the receiver treat an old belief?
+**Small math:** decay confidence as c(t) = c0 * exp(-t / tau); search tau against defense loss; compare with "keep last value" (the Update 16 pilot flattered loss this way).
+**Checklist:**
+- [ ] Add bursty loss, not just independent loss.
+- [ ] Compare keep-last, exponential decay and drop-to-prior.
+- [ ] Report loss vs tau and check the optimum is not at the edge of the grid.
+**Why it helps the proposal:** fixes a known weakness of the pilot (message loss looked mild only because the receiver kept the last value).
+
+## Idea 14. What exactly should be federated? (links P2)
+**Question:** share only the world model, only the policy, or both?
+**Small math:** compare three arms by stabilization time, final return and bytes per round; bytes = rounds x (parameters shared) x bytes per parameter x 2 (up and down).
+**Checklist:**
+- [ ] Use identical local training, rounds and seeds across arms.
+- [ ] Test under IID and non-IID splits.
+- [ ] Include a no-federation arm (each home alone) and a centralized arm.
+**Why it helps the proposal:** answers the open item "what exactly is federated" and feeds Candidate 1.
+
+## Idea 15. Which kind of non-IID hurts the agent most? (links P2)
+**Question:** label skew, feature skew, quantity skew or temporal drift: which one slows or destabilizes a federated belief agent most?
+**Small math:** vary one skew at a time (Dirichlet alpha for label skew; device-type partition for feature skew; unequal client sizes for quantity skew; staggered attack arrival for temporal drift) and report the stabilization-time penalty vs the IID case.
+**Checklist:**
+- [ ] Fix the skew levels before running.
+- [ ] Use the same unit of stabilization time as FRL-IPS (check its experiment section).
+- [ ] Repeat for FedAvg and FedProx.
+**Why it helps the proposal:** turns "non-IID" from one word into a measured breakdown.
+
+## Idea 16. When does federation save bandwidth? (links P2)
+**Question:** at what fleet size and round length does federating beat streaming raw summaries to a central server?
+**Small math:** federated bytes per home = R x 2 x M (rounds x 2 directions x model size); streaming bytes per home = r x T (summary rate x time). Federation is cheaper when R x 2 x M < r x T, which gives a break-even time T* = 2 R M / r.
+**Checklist:**
+- [ ] Use RAIDEN's real summary rate and the real model size.
+- [ ] Include compression and partial-model sharing (Idea 14).
+- [ ] Report the break-even point honestly, even if it shows streaming is cheaper for tiny summaries.
+**Why it helps the proposal:** tests the bandwidth argument instead of assuming it (it is the first reason to use federation). Known weak point: RAIDEN's summaries are already small.
+
+## Idea 17. Cold start: how many benign days before the belief is reliable? (links P1, GATE)
+**Question:** how much benign data does a new home need before false alarms settle?
+**Small math:** plot false isolation rate and novelty-score variance against days of baseline data; define "ready" as the day the rate stays under a preset limit.
+**Checklist:**
+- [ ] Use real benign captures cut into increasing prefixes.
+- [ ] Compare local-only start vs starting from the federated global model.
+- [ ] Report the shadow-mode period needed before the agent is allowed to act.
+**Why it helps the proposal:** gives a concrete answer to "what happens in the first days" and shapes the release gate.
+
+## Idea 18. Slow and stealthy attacker vs belief threshold vs a classic sequential test (links P1, P3, threat model S3)
+**Question:** does the belief-driven agent catch a low-and-slow pivot better than a simple CUSUM detector?
+**Small math:** CUSUM statistic S_t = max(0, S_{t-1} + x_t - k), alarm when S_t > h; compare detection delay vs false alarm rate against the belief threshold at matched false alarms.
+**Checklist:**
+- [ ] Define the stealthy attacker (stays under a per-window threshold) and fix its parameters first.
+- [ ] Match false alarm rates across methods.
+- [ ] Report detection delay distributions, not only means.
+**Why it helps the proposal:** gives the S3 scenario a real baseline, and connects to the optimal-stopping idea (Idea H) without needing its full theory.
+
+## Idea 19. Compute budget on hub-class hardware (links P1, P3, deployment)
+**Question:** can the GRU belief agent run fast enough on a hub-class device that inference time stays small against detection delay?
+**Small math:** latency budget: inference time + sharing delay + action time must stay well below the pivot time; report per-step latency, memory and energy per decision.
+**Checklist:**
+- [ ] Measure on a Raspberry Pi-class device with the real model size.
+- [ ] Test quantized and smaller GRU variants (also feeds the "smaller model on the coordinator" case in Idea 4).
+- [ ] Report accuracy lost for each size reduction.
+**Why it helps the proposal:** replaces assumed timings with measured ones and informs where the agent runs.
+
+---
+
+## Ranking for choosing small papers or thesis ablations (my judgment)
+
+| Idea | Best as | Cost to test | Strongest link |
+|---|---|---|---|
+| 16. Federation bandwidth break-even | Short paper or Paper 2 section | Low (arithmetic plus real sizes) | Why federated |
+| 13. Stale belief decay | Short paper or Paper 3 ablation | Low | Fixes a known pilot weakness |
+| 18. Stealthy attacker vs CUSUM | Short paper | Low to medium | Threat model S3 |
+| 10. Calibration of the unknown belief | Paper 1 ablation or short paper | Medium | Credibility of graded actions |
+| 15. Which non-IID hurts most | Paper 2 section | Medium | Candidate 1 |
+| 14. What to federate | Paper 2 ablation | Medium | Open decision |
+| 11. Cost sensitivity | Paper 1 section | Medium | Open reward item |
+| 19. Compute budget | Short paper or deployment section | Medium (hardware) | Where the agent runs |
+| 12. Message size | Paper 3 ablation | Low | Cost side of MARL vs RL |
+| 17. Cold start | Paper 1 or GATE ablation | Medium | First-days question |
+
+## Open items from this update
+1. Decide which ideas stay as ablations inside the three thesis papers and which become separate short papers; do not publish the same result twice.
+2. Run the database sweep for each idea you keep.
+3. Carry forward all open items from Updates 1 to 20, 12/10 and 13/10.
