@@ -2699,3 +2699,84 @@ You listed the ideas as: (1) zero-day belief, (2) cross-protocol, (3) federated,
 1. Decide which ideas stay as ablations inside the three thesis papers and which become separate short papers; do not publish the same result twice.
 2. Run the database sweep for each idea you keep.
 3. Carry forward all open items from Updates 1 to 20, 12/10 and 13/10.
+
+
+# Dempster-Shafer Theory for 0-Day Attack Detection — Study Notes & Paper Direction
+
+This is a standalone research direction, separate from RAIDEN — a new model-based RL (MBRL) architecture for 0-day/novel attack detection, using Dempster-Shafer (DS) evidence theory to fuse multiple uncertain sources into a POMDP belief state.
+
+## 1. Origin
+
+Sourced mathematically from a 2015 PhD thesis on underwater seabed mapping (Ridha Fezzani, Université de Bretagne Occidentale/ENSTA Bretagne), which fuses two noisy sonar sensors (multibeam echosounder + interferometric side-scan sonar) into one confident depth map using belief-function theory (the EVEREG model — Petit-Renaud & Denoeux). The thesis itself is **not** about cybersecurity — the mathematical machinery (mass functions, belief/plausibility, Dempster's combination rule, discounting by reliability) is being deliberately repurposed here for attack detection, the same way MMPP's queueing-theory math was repurposed for RAIDEN.
+
+This repurposing is not a novel leap — a literature search confirmed Dempster-Shafer theory is an established, published approach for intrusion detection, malware detection, insider-threat detection, and explicitly for the "day-zero"/anomaly-detection problem (DS theory's capacity to represent honest ignorance, rather than forcing a binary classification, is the specific property that makes it suited to detecting attacks with no known signature).
+
+## 2. Proposed Paper Direction — Comparative Analysis Contribution
+
+A comparative-analysis contribution (in the same spirit as RAIDEN's Contribution 1) comparing belief-representation/fusion approaches for 0-day-style uncertainty, before proposing the DS-based MBRL model as the answer to gaps found:
+
+- **Plain Bayesian belief (standard POMDP default)** — forces all belief onto specific, named states; cannot represent "evidence doesn't match any known category" without arbitrarily splitting probability across known options.
+- **Dempster-Shafer / belief-function theory** — allows belief to sit on *groups* of states (including the full set = total ignorance), and tracks source conflict explicitly during combination.
+- **Fuzzy Set Theory / Possibility Theory** — handles vagueness/degree-of-membership rather than DS's belief/plausibility structure; the source thesis actually combines fuzzy sets *with* DS theory (EVEREG), so a worked hybrid precedent already exists.
+- **Subjective Logic** — an extension of DS theory for trust/reputation modeling (belief, disbelief, uncertainty, base rate), used in network security contexts.
+- **Evidential Deep Learning / Dirichlet-based uncertainty models** — a modern DL-native approach: network outputs Dirichlet distribution parameters instead of a forced softmax, separating "how much evidence do I have" from "how is it distributed" — conceptually parallel to DS theory but implemented directly as a neural network output layer.
+
+**Planned finding/motivation (to be validated):** plain Bayesian/softmax-based approaches structurally cannot represent genuine "I don't recognize this" evidence without distorting it into a forced split between known classes — which is precisely the gap a 0-day detector needs to close. DS theory (or an evidential-DL equivalent) is proposed to fill that gap.
+
+## 3. Core DS Theory — What Was Learned (Q&A Progression)
+
+### 3.1 Mass Function (Basic Belief Assignment)
+The foundational object everything else is built from. Unlike plain probability, mass can be assigned to a **group/subset** of possibilities, not only to single, specific outcomes — representing honest, evidence-grounded ambiguity rather than forced-but-baseless splitting.
+
+$$\sum_{A \subseteq \Omega} m(A) = 1$$
+
+**Key distinction clarified:** mass on a group (e.g., m({attack, unknown}) = 0.6) is **not** the same as "I don't know anything" — it represents *real, positive evidence* that narrows things down to that group, just without further basis to split within it. True "total ignorance" is the separate, specific case of mass sitting on the *entire* frame of discernment with no exclusions at all.
+
+### 3.2 Belief and Plausibility
+$$Bel(A) = \sum_{B \subseteq A} m(B) \qquad Pl(A) = \sum_{B \cap A \neq \emptyset} m(B)$$
+
+- **Belief** = pessimistic/guaranteed floor — only mass entirely contained within A.
+- **Plausibility** = optimistic/possible ceiling — any mass that overlaps A at all.
+- The gap [Bel(A), Pl(A)] is itself a direct, honest measure of remaining uncertainty — narrow gap = sharp evidence, wide gap = genuinely inconclusive evidence. A single probability number cannot express this.
+- Relationship: $Pl(A) = 1 - Bel(\neg A)$ — plausibility of A is bounded only by how strongly evidence rules A *out*.
+
+### 3.3 Dempster's Combination Rule
+$$m_{1\cap2}(A) = \sum_{B \cap C = A} m_1(B)\cdot m_2(C)$$
+
+Merges two independent sources' mass functions by pairing every subset from source 1 against every subset from source 2, intersecting, multiplying their masses, and summing by resulting intersection. Mass landing on the empty set (∅) represents genuine **conflict** between sources and is explicitly tracked, then removed via normalization:
+
+$$m(A) = \frac{m_{1\cap2}(A)}{1 - m_{1\cap2}(\emptyset)}$$
+
+Worked numerically with a two-witness example; confirmed that agreeing sources reinforce each other post-normalization while conflicting sources pull against each other — the conflict is never silently averaged away.
+
+### 3.4 Relationship to POMDP (not a replacement, a swap-in)
+POMDP is a framework/skeleton (hidden state, actions, observations, belief state) — it does not dictate *how* belief must be mathematically represented. Standard POMDPs default to belief-as-probability-distribution, updated via Bayes' rule, forcing all belief onto specific named states.
+
+**DS-theory integration = swapping what the POMDP's belief state IS, not adding a parallel process.** The belief state becomes a mass function (allowing grouped/unresolved belief, including an explicit "unknown/0-day" category) instead of a probability vector, and it's updated via Dempster's combination rule instead of Bayes' rule. This is a recognized research direction sometimes called an "evidential POMDP."
+
+### 3.5 Does the 0-day/"unknown" state replace a Markov state?
+No — it is not a fourth physical state added to a Markov/MMPP-style state machine. It is better understood as a property of the **belief**, not a new row in a transition matrix: it emerges from evidence sources collectively failing to confidently resolve into a known, named state (normal / known-attack), either because all sources report high individual ignorance or because sources actively conflict with each other (non-zero mass on ∅ pre-normalization). The underlying Markov/MMPP state structure stays as defined; "unknown" surfaces at the belief-fusion layer on top of it.
+
+### 3.6 DS theory alone vs. DS + POMDP/MDP
+DS theory alone answers "what do I currently believe" — a one-shot (or repeatedly re-run) evidence-fusion/classification tool, with no concept of actions, sequential decisions, or reward (this is exactly how several published malware/insider-threat-detection papers use it standalone). It has no way to decide what to *do* about a belief. POMDP/MDP + RL is what adds sequential decision-making and action selection on top. The two are complementary, not competing: DS theory is well-suited to the **detection** half of the problem; POMDP/MBRL is needed for the **decision/mitigation** half.
+
+### 3.7 "Viewers" — what they are and where they come from
+A "viewer" (evidence source) is any independent model/signal already present in the system that can be converted into a mass function. Not an external input — these are designed/chosen from existing architecture components. For a model-based RL (MBRL) system specifically, each component of a hybrid dynamics model (e.g., a Markov/CTMC-based component, a physics-based component, a DL-based component) naturally serves as its own independent viewer, since each has different strengths and different failure modes — which is precisely why fusing them (rather than relying on one monolithic model) helps genuine collective uncertainty surface explicitly as the "unknown" mass, instead of being hidden inside one overconfident model's single output number.
+
+Each viewer needs two things to participate in DS fusion: (1) a way to convert its raw output into a mass function over the relevant states (including grouped/unresolved categories), and (2) a reliability/discounting factor (how much to trust that source) — this second part (discounting) is the next concept queued for study.
+
+## 4. Architecture Sketch (for this new, separate model)
+
+```
+Viewer 1 (Markov/CTMC component) ─┐
+Viewer 2 (Physics-based component) ─┼─> Dempster's combination rule ─> fused mass function
+Viewer 3 (DL/learned component)   ─┘         (= POMDP belief state)
+                                                      │
+                                                      v
+                                        MBRL planning / RL policy (action selection)
+```
+
+## 5. Still to Study (queued)
+- **Stage 4 — Discounting (source reliability)**: how to weight a more-trusted viewer more heavily in the combination.
+- Full worked numerical example translating the car-witness example into a 3-viewer (Markov/physics/DL) attack-detection scenario.
+- Formal comparison methodology for Section 2's proposed contribution (Bayesian vs. DS vs. Subjective Logic vs. Evidential DL) — what task/metric would make this a fair, measurable comparison, following the same rigor lessons learned from the MMPP-vs-XGBoost comparison in RAIDEN (avoid circular targets, define a shared evaluation metric, confirm train/test separation where applicable).
