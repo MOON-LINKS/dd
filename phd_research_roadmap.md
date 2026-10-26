@@ -2780,3 +2780,160 @@ Viewer 3 (DL/learned component)   ─┘         (= POMDP belief state)
 - **Stage 4 — Discounting (source reliability)**: how to weight a more-trusted viewer more heavily in the combination.
 - Full worked numerical example translating the car-witness example into a 3-viewer (Markov/physics/DL) attack-detection scenario.
 - Formal comparison methodology for Section 2's proposed contribution (Bayesian vs. DS vs. Subjective Logic vs. Evidential DL) — what task/metric would make this a fair, measurable comparison, following the same rigor lessons learned from the MMPP-vs-XGBoost comparison in RAIDEN (avoid circular targets, define a shared evaluation metric, confirm train/test separation where applicable).
+
+
+
+---
+
+## UPDATE — 26 October 2026
+
+### 6. What was added since the last update
+
+**6.1 Naming (important for the paper)**
+- **DS = Dempster–Shafer**: the framework (also called evidence theory or belief function theory).
+- **Dempster's rule** and **Yager's rule** are two *combination rules inside* DS. They are alternatives to each other, not alternatives to DS.
+- Correct wording in a paper: "DS evidence fusion with Dempster's rule" or "DS evidence fusion with Yager's rule".
+- In the Fezzani thesis, Yager appears **only** as Yager's smooth normalization for fuzzy focal elements, not as Yager's conflict rule. The thesis uses discounting, then Dempster's rule, then pignistic decision. A Dempster-vs-Yager comparison is therefore new work, not something the thesis already did.
+
+**6.2 The grid (table) method for combining two viewers**
+- Rows are the groups viewer 1 gives mass to, and columns are the groups viewer 2 gives mass to. Include Ω (the full set) in both.
+- Each cell holds the overlap of its row group and column group. Its mass is the product of the two masses.
+- Each row sums to viewer 1's mass for that group, and each column sums to viewer 2's. All cells sum to 1.
+- Add up the cells with the same overlap to get the combined mass of that group.
+- Overlap = ∅ means the two viewers disagree. The total mass on ∅ is the **conflict K**.
+- Only the overlaps are used, because the masses already carry the weight.
+
+**6.3 Dempster's rule and the Zadeh problem**
+
+$$m(X)=\frac{\sum_{B\cap C=X} m_1(B)\,m_2(C)}{1-K},\qquad K=\sum_{B\cap C=\emptyset} m_1(B)\,m_2(C)$$
+
+- Dividing by 1−K rescales what is left so the masses sum to 1 again.
+- **Zadeh paradox**: doctor 1 says meningitis 0.99 / tumor 0.01, and doctor 2 says concussion 0.99 / tumor 0.01. Then K = 0.9999, and m(tumor) = 0.0001 / 0.0001 = 1. Dempster's rule gives 100% on the one outcome both considered nearly impossible.
+- Lesson: **K must always be reported**. A high K means "my viewers disagree", and the output should not be trusted blindly.
+
+**6.4 Yager's rule**
+- The conflict is not divided away. It is moved to Ω (ignorance): m(Ω) = m₁(Ω)·m₂(Ω) + K. No division is done.
+- Result: high conflict becomes "I don't know" instead of false confidence. This fits 0-day detection better.
+- It replaces only the normalization step of Dempster's rule. The grid and the rest of the DS framework stay the same.
+- Trade-off: it is not associative, so the order of combining several viewers matters.
+- A full numeric comparison of the two rules is in Section 7.
+
+**6.5 Discounting (concept only, not yet practised)**
+- A viewer with reliability α has its masses scaled: m^α(A) = α·m(A) for A ≠ Ω, and m^α(Ω) = 1 − α + α·m(Ω).
+- It is done **before** combining. The less reliable viewer then says "I'm less sure" and counts for less.
+- Cross-protocol idea to test: a viewer trained on WiFi gets a lower α when it is looking at 5G traffic.
+
+**6.6 Pignistic transformation**
+- BetP(x) = Σ over groups B containing x of m(B)/|B|, which splits each group's mass equally among its members.
+- It is used **only at the final decision step**, never before combining, because it throws away the ignorance and conflict information.
+- It is a design choice, not a law of the theory.
+
+**6.7 Uncertainty readouts from the final belief**
+- Ignorance (mass on Ω, or the Bel–Pl gap) and conflict (K, or strife) are both outputs. Together they can signal "possible 0-day".
+
+### 7. Worked example — Dempster's rule, then Yager's rule
+
+Frame Ω = {A, B, C}. Two viewers each give a mass function.
+
+#### Part A — viewers agree (no conflict)
+
+- Viewer 1: m₁({A,B}) = 0.5, m₁(Ω) = 0.5
+- Viewer 2: m₂({A,C}) = 0.6, m₂(Ω) = 0.4
+
+Grid (cell = overlap, mass = product):
+
+| | {A,C} = 0.6 | Ω = 0.4 |
+|---|---|---|
+| **{A,B} = 0.5** | {A} → 0.30 | {A,B} → 0.20 |
+| **Ω = 0.5** | {A,C} → 0.30 | Ω → 0.20 |
+
+- No cell is empty, so **K = 0**.
+- Dempster: divide by 1−0 = 1, so nothing changes. m({A}) = 0.30, m({A,B}) = 0.20, m({A,C}) = 0.30, m(Ω) = 0.20.
+- Yager: K = 0, so nothing moves to Ω. The result is **identical**.
+- Lesson: when viewers don't clash, the two rules are the same. They differ only when K > 0.
+
+#### Part B — viewers clash
+
+- Viewer 1: m₁({A}) = 0.7, m₁({A,B}) = 0.2, m₁(Ω) = 0.1
+- Viewer 2: m₂({C}) = 0.6, m₂({B,C}) = 0.3, m₂(Ω) = 0.1
+
+Grid (∅ = empty overlap = disagreement):
+
+| | {C} = 0.6 | {B,C} = 0.3 | Ω = 0.1 |
+|---|---|---|---|
+| **{A} = 0.7** | ∅ → 0.42 | ∅ → 0.21 | {A} → 0.07 |
+| **{A,B} = 0.2** | ∅ → 0.12 | {B} → 0.06 | {A,B} → 0.02 |
+| **Ω = 0.1** | {C} → 0.06 | {B,C} → 0.03 | Ω → 0.01 |
+
+All cells sum to 1.00.
+
+**Conflict:** K = 0.42 + 0.21 + 0.12 = **0.75**. The two viewers disagree on 75% of the mass.
+
+**Dempster's rule.** Throw away ∅ and divide the rest by 1−K = 0.25:
+
+| Group | Calculation | Mass |
+|---|---|---|
+| {A} | 0.07 / 0.25 | 0.28 |
+| {B} | 0.06 / 0.25 | 0.24 |
+| {A,B} | 0.02 / 0.25 | 0.08 |
+| {C} | 0.06 / 0.25 | 0.24 |
+| {B,C} | 0.03 / 0.25 | 0.12 |
+| Ω | 0.01 / 0.25 | 0.04 |
+
+Total = 1.00. Ignorance m(Ω) is only 0.04. The result looks sharp even though 75% of the evidence clashed.
+
+**Yager's rule.** Keep the non-conflict cells as they are, and put K on Ω:
+
+| Group | Mass |
+|---|---|
+| {A} | 0.07 |
+| {B} | 0.06 |
+| {A,B} | 0.02 |
+| {C} | 0.06 |
+| {B,C} | 0.03 |
+| Ω | 0.01 + 0.75 = **0.76** |
+
+Total = 1.00. Most of the mass now says "don't know".
+
+**Side by side** (for A):
+
+| | Dempster | Yager |
+|---|---|---|
+| Bel({A}) | 0.28 | 0.07 |
+| Pl({A}) | 0.28 + 0.08 + 0.04 = 0.40 | 0.07 + 0.02 + 0.76 = 0.85 |
+| Ignorance m(Ω) | 0.04 | 0.76 |
+| Gap Pl − Bel | 0.12 (narrow) | 0.78 (wide) |
+
+**Reading it:**
+- Dempster hides the clash. The surviving 25% is blown back up to 100%, so the output looks confident.
+- Yager keeps the clash visible as ignorance.
+- For 0-day detection, high K or a high m(Ω) is exactly the "my viewers can't agree, treat as unknown" signal.
+- Always report K with either rule.
+- Pignistic (BetP) is applied only after combining, and only if a final hard decision is needed.
+
+### 8. Belief-method alternatives (merged table)
+
+| # | Method | Idea | Handles "unknown"? | Role in my work |
+|---|---|---|---|---|
+| 1a | Bayesian POMDP, known states only | probability vector, Bayes update | No, it must pick among known states | **Must**: baseline |
+| 1b | Bayesian POMDP with an explicit "unknown" state | same, plus one extra state with a prior I choose (priors sum to 100%) | Yes, but it depends on my prior | **Must**: baseline |
+| 2 | DS (Dempster / Yager) | mass on groups, plus Ω for ignorance | Yes, as a property of the belief | **Must**: core method |
+| 3 | Subjective logic | belief, disbelief, uncertainty, base rate; fusion operators | Yes | Related work only |
+| 4 | Evidential deep learning | the network outputs Dirichlet parameters | Yes | Nice to have (DL-native option) |
+| 5 | Fuzzy / possibility theory | membership degrees, min/max | Vagueness, not conflict | Skip or mention only |
+
+Decision for the IoT cross-protocol MBRL work: core comparison is 1a vs 1b vs DS (Dempster and Yager). Evidential DL is optional if time allows. Subjective logic and fuzzy are related work only.
+Hypothesis to test, not a claim: DS may handle protocol shift better, because unfamiliar traffic can stay as unresolved belief instead of being forced onto a known class. If 1b performs as well as DS, that is also a finding.
+
+### 9. Experiment plan (before any claims)
+- Datasets: CICIoT2023 (WiFi/Zigbee smart home) and 5G-NIDD (5G). No public LTE-M attack dataset, so use an OMNeT++ simulation there. Train and validate per environment, with separate result tables.
+- Fair comparison: same viewers, same way of turning viewer outputs into masses, held-out data, and K reported. For 0-day, hold out one attack class during training and treat it as unseen.
+- Metrics: precision, recall, F1/F2, FPR, FNR, ROC-AUC, plus how often "unknown/high ignorance" fires on the held-out attack vs on normal traffic.
+- Still open: how a viewer's output becomes a mass function. This will probably decide the results, so it is the next concept after discounting.
+
+### 10. Next steps
+1. Learn discounting with a worked example (the thesis has a distance-based version).
+2. Learn how viewer outputs become mass functions.
+3. Extend the Section 7 toy comparison (Dempster vs Yager) to three viewers, with and without discounting.
+4. Then run on CICIoT23 and 5G-NIDD.
+5. RAIDEN homework still open (separate thread): Q5 ground truth by injecting known attack points, and fixing the P→Q explanation in the paper to Qij = Pij/Δt.
