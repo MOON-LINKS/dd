@@ -2937,3 +2937,84 @@ Hypothesis to test, not a claim: DS may handle protocol shift better, because un
 3. Extend the Section 7 toy comparison (Dempster vs Yager) to three viewers, with and without discounting.
 4. Then run on CICIoT23 and 5G-NIDD.
 5. RAIDEN homework still open (separate thread): Q5 ground truth by injecting known attack points, and fixing the P→Q explanation in the paper to Qij = Pij/Δt.
+
+### 11. Evidential Deep Learning (EDL)
+
+**11.1 What it is**
+- EDL = Evidential Deep Learning (Sensoy et al., 2018; verify the citation before using it in the paper).
+- It is the DL-native alternative to DS for representing "I don't know". A reviewer will ask "why not just use evidential DL?", so it is worth including if time allows.
+- Fair framing: Bayesian 1b and DS can also represent "unknown". The methods differ in **where the unknown number comes from**, not in whether they can express it.
+
+| Method | Where "unknown" comes from |
+|---|---|
+| 1b Bayesian | An extra state whose prior I choose (a guess, since a 0-day has no training examples) |
+| DS | Mass on Ω, built by hand from each viewer's output |
+| EDL | Learned by the network, per input |
+
+**11.2 The one idea**
+- A normal classifier (softmax) always outputs percentages that add to 100%, so it must pick among the known classes. It can say "DDoS 97%" on a 0-day.
+- EDL instead outputs **evidence**: non-negative counts per class (0, 5, 40...), not forced to add to 100.
+- Example (classes: normal, DDoS, scan):
+  - [0, 40, 1]: lots of evidence, all for DDoS. Confident.
+  - [0, 0, 0]: no evidence. "I don't know."
+  - [4, 4, 4]: little evidence, spread out.
+- Ignorance: u = K / (K + total evidence), with K = number of classes.
+  - [0, 40, 1] → 3/44 ≈ 0.07
+  - [0, 0, 0] → 3/3 = 1.0
+  - [4, 4, 4] → 3/15 = 0.2
+
+**11.3 The [20, 20, 20] case (limitation of u alone)**
+- [20, 20, 20] gives u = 3/63 ≈ 0.05, which is low.
+- u only measures **how much evidence there is in total**. It does not measure whether the evidence agrees.
+- [20, 20, 20] means plenty of evidence, spread evenly across all classes. That is **conflict/ambiguity**, not ignorance.
+- So two readouts are needed:
+
+| Readout | [0,40,1] | [0,0,0] | [20,20,20] |
+|---|---|---|---|
+| Ignorance u | 0.07 low | 1.0 high | 0.05 low |
+| Class probabilities (e+1)/S | peaked | flat | flat |
+| Reading | confident DDoS | unknown | conflicting / ambiguous |
+
+- u high = unknown (the 0-day signal). u low + flat probabilities = conflict. u low + peaked = confident.
+- DS separates ignorance (mass on Ω) from conflict (K) explicitly. In EDL, conflict must be read from the flat shape.
+
+**11.4 Where the numbers come from (the Dirichlet)**
+- Poll analogy: two polls both say 60% yes, one asked 5 people, the other 5,000. Same percentage, very different trust. A Dirichlet is a belief about what the true probability vector is: wide for a small "poll", narrow for a large one.
+- Parameters: α_k = e_k + 1 (the +1 means "start from knowing nothing"), strength S = Σα, expected probability p_k = α_k / S, ignorance u = K / S.
+- The poll is **not** a viewer. The poll size (S) is how much evidence sits behind **one** viewer's belief for the current input.
+- Viewers run at the same time on the same traffic, and each has its own S. A viewer that recognizes the pattern gives a lot of evidence, and one that doesn't gives little. This is why discounting and fusion matter.
+
+**11.5 Link to DS (important for the design)**
+- From the same evidence: belief per class b_k = e_k / S and ignorance u = K / S. Check on [0, 40, 1] (S = 44): b = [0, 0.91, 0.02], u = 0.07, total 1.
+- That is a **mass function** with mass on single classes plus Ω. Subjective logic uses the same triple (belief, ignorance, base rate).
+- Difference from full DS: no mass on groups like {A,B}.
+- So an EDL viewer can plug into DS fusion: network → evidence → (b, u) → discount → Dempster or Yager. For this kind of viewer it answers the open question of how a viewer's output becomes a mass function.
+
+**11.6 Does EDL need an "unknown" state?**
+- No extra class. The network has outputs only for the known classes.
+- "Unknown" is a **readout**: the ignorance u (the Ω mass). A threshold on u decides "possible 0-day". The threshold is a design choice to tune and test on held-out attacks.
+- Adding an "unknown attack" output node would need training examples of unknown attacks, and a 0-day has none. That is the same problem as the Bayesian 1b prior.
+
+**11.7 How the network is trained**
+1. Replace the softmax layer with a layer that outputs non-negative numbers (ReLU, softplus or exp). Those are the evidence values.
+2. Loss rewards evidence on the correct class.
+3. A KL regularizer pushes evidence on wrong classes toward zero ("back to flat, I don't know"). Its weight is usually increased gradually over training.
+4. Result: loud when right, quiet when unsure.
+
+**11.8 Honest caveats**
+- Training never shows a 0-day. It only teaches "stay quiet when unsure" on known data. Whether that carries over to unseen attack classes is an experiment, not a guarantee. Some later papers criticize how reliable EDL's uncertainty is.
+- A network can output high evidence on traffic it has never seen.
+- It needs a trained network, which is heavier than DS or Bayes arithmetic. That matters for IoT.
+
+**11.9 Comparison**
+
+| | 1b Bayesian | DS | EDL |
+|---|---|---|---|
+| Where "unknown" comes from | chosen prior | hand-built masses | learned by the network, per input |
+| Ignorance | prior on "unknown" state | m(Ω) | u = K/S |
+| Conflict | not shown | K | not shown, read from flat probabilities |
+| Fuses several viewers | yes | yes | not by itself, but its output can feed DS |
+
+**11.10 Next**
+- Add EDL as an optional viewer/comparison arm in the held-out-attack experiment on CICIoT23 (and 5G-NIDD).
+- Readouts to report for EDL: u and the class-probability shape, on the held-out attack vs on normal traffic.
