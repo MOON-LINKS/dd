@@ -3181,3 +3181,69 @@ It is a developer job. Possible fixes:
 5. Open question from step 7: how to choose α for a viewer on a new protocol.
 6. Still open from before: how to turn a non-EDL viewer's output into a mass function; Q5 ground truth for RAIDEN; P→Q fix in the RAIDEN paper.
 
+**14.3 E3: how the network is trained to output evidence**
+
+- Setup: traffic features → network → last layer forced to be ≥ 0 (ReLU, softplus or exp) → evidence e → α = e + 1. The training data is labelled (normal, DDoS, scan).
+- **Part 1, reward evidence on the right class.** The loss compares p = α / S with the true label, and adds a penalty that is smaller when there is more total evidence. For a window labelled DDoS:
+
+| Network output | Evidence | p | Loss (approx.) | Verdict |
+|---|---|---|---|---|
+| Confident and right | [0, 40, 1] | [0.02, 0.93, 0.05] | 0.01 | best |
+| Knows nothing | [0, 0, 0] | [⅓, ⅓, ⅓] | 0.83 | middling |
+| Confident and wrong | [30, 2, 0] | [0.89, 0.09, 0.03] | 1.63 | worst |
+
+  Ordering: confident-and-right beats ignorant, and ignorant beats confident-and-wrong.
+- **Part 2, regularizer on wrong-class evidence (KL to the flat [1, 1, 1] case).** It looks only at evidence on the wrong classes and pulls it back toward "no evidence". Plain words: be loud only about the right thing. Its weight starts small and grows during training, because a heavy penalty early would teach the network to output zero evidence for everything.
+- **Result:** loud for the correct class when it recognizes the input, quiet (low evidence, high u) when it can't.
+- **Why ignorant beats confident-and-wrong:** a confidently wrong output either blocks legitimate users (false positive) or lets an attack continue with no alarm, and the output looks sure, so nothing warns you. An ignorant output (u = 1) is visible, and the system can react to it.
+- **Ignorance is not free.** If the system stays silent on an unknown, a real attack still goes on. "Unknown" must trigger a **cautious action** (alert, rate-limit, more checking, ask other viewers), not "do nothing".
+- **Honest limits:** training never shows a 0-day. It only teaches "stay quiet when unsure" on the known classes. Whether that carries over to an unseen class is not guaranteed, and a held-out attack class is the test. It still needs labelled data, but there is no table of invented unknown-state numbers.
+
+**14.4 E4: reading the outputs (u and the shape of p together)**
+
+| Evidence | u = K / S | p (shape) | Reading |
+|---|---|---|---|
+| [0, 40, 1] | 0.07 (low) | [0.02, 0.93, 0.05] peaked | Confident: DDoS |
+| [0, 0, 0] | 1.0 (high) | [⅓, ⅓, ⅓] flat | Unknown: no evidence |
+| [20, 20, 20] | 0.05 (low) | [⅓, ⅓, ⅓] flat | Conflict: lots of evidence, no winner |
+| [3, 1, 0] | 0.43 (middle) | [0.57, 0.29, 0.14] leaning | Weak: leaning normal, not sure |
+| [10, 10, 0] | 0.13 (low) | [0.48, 0.48, 0.04] two-way tie | Narrow conflict: torn between two classes, third ruled out |
+
+- Remember S = (sum of evidence) + K. For [10, 10, 0]: S = 20 + 3 = 23, u = 3/23, α = [11, 11, 1], p = [11/23, 11/23, 1/23].
+- **Reading routine:**
+  1. Check u first. High means "I don't know" (possible 0-day), so take the cautious action. Low means continue.
+  2. Check the shape of p, for example the gap between the highest and second-highest p. Big gap: act on the top class. Small gap: conflict or ambiguity, so ask other viewers or act cautiously.
+- DS link: u is the mass on Ω. A flat p with low u is conflict **inside one network**, which is not the K between two viewers.
+- A two-way tie is "one of these two, can't tell which" in DS (a group such as {N, D}). EDL has no group mass, so it shows it as two separate beliefs.
+- Cautions: the thresholds on u and on the p gap are design choices to tune and report. Low u does not prove the traffic is familiar, because a network can still produce a lot of evidence on something new.
+
+**14.5 E5: EDL as a viewer inside DS fusion**
+
+- Pipeline: traffic → EDL network → evidence e → mass function (b, u) → discount (α) → combine with the other viewers (Dempster or Yager) → readouts (K, Ω, BetP) → decision.
+- EDL gives masses straight out of the network. For non-EDL viewers, the way to build masses is still an open design question.
+- **Example** (states N, D, S):
+  - Viewer 1, EDL: evidence [3, 9, 0], S = 15, u = 0.2. Mass: {N} 0.2, {D} 0.6, Ω 0.2.
+  - Viewer 2, physics/Markov: {N} 0.2, {D, S} 0.5, Ω 0.3.
+  - Grid (cell = overlap, mass = product): {N}·{N} → {N} 0.04; {N}·{D,S} → ∅ 0.10; {N}·Ω → {N} 0.06; {D}·{N} → ∅ 0.12; {D}·{D,S} → {D} 0.30; {D}·Ω → {D} 0.18; Ω·{N} → {N} 0.04; Ω·{D,S} → {D,S} 0.10; Ω·Ω → Ω 0.06.
+  - K = 0.22. Collected: {N} 0.14, {D} 0.48, {D, S} 0.10, Ω 0.06 (total 0.78).
+
+| | Dempster (÷ 0.78) | Yager (K to Ω) |
+|---|---|---|
+| {N} | 0.18 | 0.14 |
+| {D} | 0.62 | 0.48 |
+| {D, S} | 0.13 | 0.10 |
+| Ω | 0.08 | 0.28 |
+
+  - Pignistic on the Dempster result: D ≈ 0.70, N ≈ 0.20, S ≈ 0.09. Readouts: K = 0.22, ignorance 0.08 (Dempster) or 0.28 (Yager). Thresholds decide between "act on DDoS" and "cautious action".
+- **With discounting:** if the EDL network sits in a new environment and gets α = 0.8, its masses become {N} 0.16, {D} 0.48, Ω 0.36. Combining again: K drops to 0.18, and Yager's {D} falls from 0.48 to 0.38. The EDL viewer pulls less.
+- **Cautions:**
+  - Dempster's and Yager's rules assume the viewers give **independent** evidence. If the viewers were trained on the same data or use the same features, they are not independent and the result becomes overconfident.
+  - EDL puts mass only on single classes and Ω, while other viewers can use groups such as {D, S}. The grid handles both.
+
+### 15. Next steps (replaces the earlier Section 15)
+1. **E6:** limits of EDL and what to test (does a held-out attack class really give low evidence? how sensitive is it to the regularizer weight?).
+2. Choose α for a viewer on a new protocol (open question from the discounting step).
+3. How to turn a non-EDL viewer's output into a mass function.
+4. Test the independence assumption between viewers.
+5. Experiment plan: Bayesian 1a / 1b vs DS (Dempster, Yager) vs EDL, with a held-out attack class on CICIoT2023 and 5G-NIDD.
+6. Still open from before: Q5 ground truth for RAIDEN; the P→Q fix in the RAIDEN paper.
