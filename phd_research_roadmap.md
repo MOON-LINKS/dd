@@ -3018,3 +3018,166 @@ Hypothesis to test, not a claim: DS may handle protocol shift better, because un
 **11.10 Next**
 - Add EDL as an optional viewer/comparison arm in the held-out-attack experiment on CICIoT23 (and 5G-NIDD).
 - Readouts to report for EDL: u and the class-probability shape, on the held-out attack vs on normal traffic.
+
+
+---
+
+## UPDATE — 27 October 2026
+
+Today was a slower, step-by-step recap with deeper detail: first the Bayesian belief with an unknown state (Section 12), then DS in more depth (Section 13), then EDL steps E1–E2 (Section 14). Sections 6–11 from 26 October stay as they are. Section 14 extends Section 11.
+
+### 12. Bayesian belief with an "unknown attack" state — in depth
+
+**12.1 State vs observation**
+- **State** (hidden): normal, DDoS, scan, unknown attack. We never see it directly.
+- **Observation**: what we measure in this time window.
+- An attack is a state, not a spike. A spike is one thing we can observe. Some attacks cause spikes, and some normal traffic (a flash crowd, a firmware update) does too.
+- The observation can have as many types as we choose: low / medium / spike, or a real number such as packets per second. "Spike / no spike" was only a small example.
+
+**12.2 The filter has two steps per window**
+1. **Predict:** move the last belief forward using the transition matrix ("if I was in A, where am I now?"). Result: the prior, meaning the belief before looking at this window.
+2. **Update:** observe the window, then correct the belief using the likelihood table.
+
+**12.3 The update, with numbers**
+- Prior: normal 0.90, DDoS 0.04, scan 0.04, unknown 0.02.
+- Observation: spike. Spike column of the likelihood table: 0.05, 0.90, 0.30, 0.50.
+- Multiply state by state: 0.045, 0.036, 0.012, 0.010.
+- **Divide by the sum of those four products** (0.103), not by a "spike value". New belief: normal 0.44, DDoS 0.35, scan 0.12, unknown 0.10.
+- Why multiply: a state is the right explanation only if it was already plausible (prior) **and** it explains the observation (likelihood). Count picture: of 1,000 windows, 103 show a spike, and 36 of those are DDoS, so 36/103 = 35%.
+- Why divide: the products are leftover pieces that add up to 0.103, not 1. Rescaling does not change the comparison between states.
+- The total (0.103) is also a health check. If it is persistently tiny, nothing in the model explains the traffic.
+
+**12.4 The likelihood table**
+
+| State | low | medium | spike | Row total |
+|---|---|---|---|---|
+| normal | 0.70 | 0.25 | 0.05 | 1.00 |
+| DDoS | 0.02 | 0.08 | 0.90 | 1.00 |
+| scan | 0.30 | 0.40 | 0.30 | 1.00 |
+| unknown | 0.20 | 0.30 | 0.50 | 1.00 |
+
+- Each **row** adds up to 1, because a state must produce something. The **columns** do not add up to 1 and don't need to. We use only the column of what was actually observed.
+- The table is **fixed**: learned once from labelled data and reused every cycle. The belief changes, and the table does not.
+- A frozen table assumes the world matches the training data. A new protocol or environment can make it wrong.
+
+**12.5 Chaining over time**
+- The belief after clue 1 becomes the prior for clue 2. So the running belief is the original prior × all old clues, and it is never the original prior alone.
+- The predict step lets states change, so old clues slowly fade.
+- Example (no state change): two spikes in a row move DDoS from 35% to about 75%.
+
+**12.6 Why the prior is needed (the clue alone is worse)**
+- The likelihoods answer "how well does each state explain a spike?", not "how likely is each state?".
+- Clue alone would say DDoS 51% (and unknown 29%). With the prior it is normal 44%, DDoS 35%. Of the 103 spike windows only 36 were DDoS, so the clue-only answer would be wrong about two-thirds of the time (the base-rate mistake).
+
+**12.7 The unknown row is a guess**
+- Changing the unknown likelihood from 0.50 to 0.05 moves "unknown" from about 10% to about 1%, with the same traffic.
+- The drop comes from my assumption, not from evidence. A 1% unknown does not mean the model is sure it's a known pattern. It means I told the model that 0-days rarely cause spikes.
+
+**12.8 What if the table is wrong**
+It is a developer job. Possible fixes:
+- Validate on held-out labelled data (does "DDoS 35%" correspond to about 35% real DDoS?).
+- Build it from enough samples, and use smoothing so no value is exactly 0.
+- Monitor the total from the divide step in production.
+- Re-estimate per environment (WiFi, 5G, LTE-M) and on newer data.
+- Sensitivity test: change the guessed numbers and see whether the decision changes.
+
+**12.9 Why DS (what plain Bayes cannot express)**
+1. **No idea vs evenly split.** [0.25, 0.25, 0.25, 0.25] can mean "no evidence" or "real, balanced evidence". Bayes writes them the same way.
+2. **A group.** "Attack, but I can't tell whether A or B" must become something like A = 10%, B = 10%, which adds a split nobody had evidence for. DS puts 0.20 on {A, B}.
+3. **The unknown row needs invented numbers.**
+- Poisoning of the table is a different, real problem and affects every learned method.
+- If every viewer puts mass only on single states, Dempster's rule gives exactly the Bayesian multiply-and-divide.
+
+### 13. DS in more depth (steps 3 to 8)
+
+**13.1 Mass, belief, plausibility (step 3)**
+- Frame: N (normal), D (DDoS), S (scan), Ω = {N, D, S}.
+- Example viewer: m({D}) = 0.3, m({D, S}) = 0.4, m(Ω) = 0.3. Mass on {D, S} is real evidence ("attack, can't tell which").
+- Bel(A) = floor (groups entirely inside A). Pl(A) = ceiling (groups that overlap A). Check: Pl(A) = 1 − Bel(not A).
+
+| Group | Bel | Pl |
+|---|---|---|
+| {D} | 0.3 | 1.0 |
+| {S} | 0 | 0.7 |
+| {N} | 0 | 0.3 |
+| {D, S} | 0.7 | 1.0 |
+
+- All mass on Ω gives [0, 1] for every state, the widest gap, which is total ignorance. Evenly split single-state evidence (⅓ each) gives Bel = Pl = ⅓ with no gap.
+
+**13.2 The grid and Dempster's rule (step 4)**
+- Rows = groups of viewer 1, columns = groups of viewer 2. Cell = **intersection** of the two groups (decides *where* the mass goes). Cell mass = **product** (decides *how much*, since both independent claims hold).
+- Example: viewer 1 {D} 0.3, {D, S} 0.4, Ω 0.3; viewer 2 {D, S} 0.5, Ω 0.5. Combined: {D} 0.30, {D, S} 0.55, Ω 0.15. K = 0, so no division is needed.
+- Effect of agreement: ignorance falls from 0.30 to 0.15, and Bel({D, S}) rises from 0.70 to 0.85.
+
+**13.3 Why divide by 1 − K**
+- K is the mass in cells with an empty overlap (contradictions). The empty set contains no state, so those cases are discarded and the rest is rescaled to 1, the same move as Bayes' divide.
+- Example (viewer 1 {D} 0.6, Ω 0.4; viewer 2 {N} 0.5, Ω 0.5): K = 0.30. Dempster gives D 0.43, N 0.29, Ω 0.29.
+
+**13.4 Conflict and the Zadeh problem (step 5)**
+- Viewer 1: {D} 0.99, {S} 0.01. Viewer 2: {N} 0.99, {S} 0.01. K = 0.9999, and only {S} survives (0.0001).
+- Dempster divides by 0.0001 and gives m({S}) = 1.0, the answer both viewers thought nearly impossible.
+- Lesson: **always report K**. High K means "my viewers disagree", which is the situation where something new may be happening.
+
+**13.5 Yager's rule (step 6)**
+- Same grid, no division. Conflict goes to Ω: m(Ω) = m₁(Ω)·m₂(Ω) + K.
+- Zadeh window: {S} 0.0001, Ω 0.9999 ("unknown"), which is the behaviour wanted for 0-day detection.
+- K = 0.30 example: D 0.30, N 0.20, Ω 0.50.
+- When K = 0, both rules give the same answer.
+- Alternative design: Dempster plus a K threshold ("if K is high, output unknown"). Yager is the smooth version.
+- Costs: more cautious on every clash (risk of alert fatigue), and non-associative (the order of combining several viewers can change the result).
+
+**13.6 Discounting (step 7)**
+- Reliability α between 0 and 1. Every group except Ω: m^α(A) = α·m(A). Ω: m^α(Ω) = 1 − α + α·m(Ω). α = 1 means fully trusted, α = 0 means ignored.
+- Example: {D} 0.3, {D, S} 0.4, Ω 0.3 with α = 0.5 becomes {D} 0.15, {D, S} 0.20, Ω 0.65.
+- Example: {A} 0.2, {A, B} 0.8, no mass on Ω, α = 0.8 gives {A} 0.16, {A, B} 0.64, Ω 0.20. Ω is not a new field, since its entry was 0.
+- Effect when combining: with viewer 2 at α = 0.5, K drops from 0.30 to 0.15, and Dempster gives D 0.53, N 0.12, Ω 0.35 (instead of 0.43 / 0.29 / 0.29).
+- Discount **before** combining, never after.
+- α must be chosen by the designer: validation accuracy, accuracy per environment, a drift detector, or tuning. It does not help against a viewer that is confidently wrong about something it has never seen.
+- Open check question: what α should a WiFi-trained viewer get on 5G traffic, and why is that hard to know in advance?
+
+**13.7 Decision and readouts (step 8)**
+- Pignistic: BetP(x) = Σ m(B)/|B| over groups B containing x. On {D} 0.30, {D, S} 0.55, Ω 0.15: D 0.625, S 0.325, N 0.05.
+- Apply it **only at the end**. On the Yager Zadeh result it gives about ⅓ each, which hides the problem. Only the Ω = 0.9999 reveals it.
+- Readouts: ignorance (m(Ω) or the Bel–Pl gap), conflict (K), and best guess (BetP).
+- Decision rule (thresholds are a design choice to tune and report): if K or m(Ω) is high, output "unknown / possible 0-day" and take the cautious action. Otherwise take the highest BetP state.
+
+### 14. EDL — steps E1 and E2
+
+**14.1 E1: the idea**
+- A normal classifier (softmax) always outputs percentages that add to 100%, so it has the same "no idea vs evenly split" weakness and can say "DDoS 97%" on a 0-day.
+- EDL changes only the last layer. It outputs **evidence**: one non-negative number per class (not forced to add up to anything).
+
+| Traffic | Evidence | Meaning |
+|---|---|---|
+| Clear flood | [0, 40, 1] | lots of evidence, all for DDoS |
+| Unfamiliar traffic | [0, 0, 0] | no evidence, "I don't know" |
+| Mixed traffic | [20, 20, 20] | lots of evidence, spread equally (conflict) |
+
+- There is no extra "unknown" class. Unknown appears as how little total evidence there is.
+- "Weights" are the network's internal parameters. What it outputs is evidence.
+
+**14.2 E2: from evidence to belief and ignorance**
+- α_k = e_k + 1 (the +1 means "start from knowing nothing").
+- S = sum of α = (sum of evidence) + K, with K = number of classes.
+- Ignorance u = K / S. Belief b_k = e_k / S (adds up to 1 − u). Probability p_k = α_k / S (adds up to 1).
+- p_k = b_k + u/K, so p is b with the ignorance split equally, which is exactly the pignistic idea.
+
+| | [0, 0, 0] | [0, 40, 1] | [20, 20, 20] |
+|---|---|---|---|
+| α | [1, 1, 1] | [1, 41, 2] | [21, 21, 21] |
+| S | 3 | 44 | 63 |
+| u | 1.0 | 0.07 | 0.05 |
+| b | [0, 0, 0] | [0, 0.91, 0.02] | [0.32, 0.32, 0.32] |
+| p | [⅓, ⅓, ⅓] | [0.02, 0.93, 0.05] | [⅓, ⅓, ⅓] |
+
+- **b and u together are a DS mass function** (mass on single classes, plus u on Ω). So [0, 0, 0] is m(Ω) = 1. Difference from full DS: no mass on groups like {D, S}.
+- b feeds DS fusion. p is the "if I must pick one" answer, used for choosing the class and for accuracy metrics, and for comparing with softmax.
+
+### 15. Next steps
+1. **E3:** how the network is trained to output evidence (loss, the regularizer that pushes wrong-class evidence to zero).
+2. **E4:** reading the outputs: u plus the shape of p (u low + flat p = conflict).
+3. **E5:** EDL as a viewer feeding DS (discount, then Dempster or Yager).
+4. **E6:** limits and what to test (does a held-out attack class really give low evidence?).
+5. Open question from step 7: how to choose α for a viewer on a new protocol.
+6. Still open from before: how to turn a non-EDL viewer's output into a mass function; Q5 ground truth for RAIDEN; P→Q fix in the RAIDEN paper.
+
