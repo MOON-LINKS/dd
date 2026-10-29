@@ -3247,3 +3247,169 @@ It is a developer job. Possible fixes:
 4. Test the independence assumption between viewers.
 5. Experiment plan: Bayesian 1a / 1b vs DS (Dempster, Yager) vs EDL, with a held-out attack class on CICIoT2023 and 5G-NIDD.
 6. Still open from before: Q5 ground truth for RAIDEN; the P→Q fix in the RAIDEN paper.
+
+
+---
+
+## UPDATE — 29 October 2026
+
+Today: a quick recap of EDL (E6, limits), then **Subjective Logic (SL) from zero, step by step** (Sections 17 to 23), then a refresher on DS (Dempster and Yager). Sections 6 to 15 from earlier updates stay as they are. Section 16 closes the EDL thread from Section 14.
+
+### 16. EDL E6 — limits and what to test
+
+**Central issue:** training never shows the network a 0-day. It only teaches "stay quiet when unsure" on known data. Whether it stays quiet on a new attack is an experiment, not a guarantee. Far from the training data, a ReLU network can still output large evidence, so low u can look like "familiar" when it isn't.
+
+| Limit | Meaning | Test |
+|---|---|---|
+| Unseen-class overconfidence | A held-out attack may still get high evidence | Hold out one attack family; compare u on held-out attack vs normal vs known attacks; report AUROC of u as a "novel or not" detector |
+| Regularizer sensitivity | Too weak = overconfident; too strong = u high on everything | Sweep the regularizer weight with a grid-edge check; report held-out AUROC and known-class accuracy together |
+| u is not true distance from training | u measures how much evidence the network learned to produce, not real novelty. Some later papers criticize EDL's uncertainty reliability (verify before citing) | Compare against softmax max-probability and a plain ensemble on the same task |
+| Calibration | Does u = 0.6 really mean about 60% novel? | ECE with reliability plots (Idea 10) |
+| No separate conflict number | Conflict is only visible as flat p with low u, inside one network | Report the u and p-gap pair (E4) |
+| Independence when fused | Viewers trained on the same data or features are not independent, so Dempster and Yager become overconfident | Measure correlation between viewers' evidence before fusing |
+
+**Cost:** inference is about the same as a normal classifier (only the last layer changes). Extra work is in training and tuning.
+**Pre-register:** held-out attack family, u threshold chosen on a validation split (not test), and the pass rule (for example EDL's AUROC must beat softmax max-probability by a margin set in advance). A failure is still a reportable result.
+
+### 17. Subjective Logic, Step 1 — the problem and the three numbers
+
+**Problem:** two restaurants both show 4.5 stars, one from 2 reviews and one from 5,000. A single number cannot show "how much evidence is behind me". SL describes a belief with three numbers instead of one.
+
+For one yes/no claim, an **opinion** is (b, d, u):
+- **b** belief: evidence for
+- **d** disbelief: evidence against
+- **u** uncertainty: evidence missing ("I don't know yet")
+- b + d + u = 1 (one bar: green / red / grey)
+
+| Situation | b | d | u |
+|---|---|---|---|
+| No evidence at all | 0 | 0 | 1 |
+| 1,000 diners, 500 happy, 500 not | ~0.50 | ~0.50 | ~0 |
+
+A single probability says "50%" for both rows, but they are opposite situations: "no idea" vs "strong evidence it is a coin flip". u keeps them apart.
+
+**Security example, claim "device X is compromised":** a brand-new device is (0, 0, 1), so watch it closely. A device watched for a week behaving normally is about (0.02, 0.95, 0.03), so leave it alone.
+
+(Note: the rough numbers in my first Step 1 table were illustrations. The exact computation is in Step 3 below.)
+
+### 18. Step 2 — evidence counts give the opinion (the first main equation)
+
+Count evidence: **r** = pieces for, **s** = pieces against.
+
+$$b=\frac{r}{r+s+2}\qquad d=\frac{s}{r+s+2}\qquad u=\frac{2}{r+s+2}$$
+
+The "+2" is a starting amount of doubt (two imaginary reviews' worth). Real evidence slowly pushes it out.
+
+| | Happy | Unhappy | b | d | u |
+|---|---|---|---|---|---|
+| 5 reviews | 4 | 1 | 0.57 | 0.14 | 0.29 |
+| 1,000 reviews | 800 | 200 | 0.80 | 0.20 | 0.002 |
+
+Same 80% happy, very different opinions. 0 reviews gives u = 1. 1 happy review gives b = 1/3, u = 2/3. More evidence means u shrinks toward 0.
+
+### 19. Step 3 — base rate and the single probability (the second main equation)
+
+**Base rate a** = how likely the claim is before any evidence (restaurant: 0.5; random IoT device compromised: about 0.01).
+
+$$P = b + a\cdot u$$
+
+The grey part is filled in using the base rate.
+
+- No evidence, a = 0.02: P = 0 + 0.02 × 1 = **0.02** (new device falls back to the base rate).
+- Same evidence (b = 0.2, d = 0.4, u = 0.4), different base rates: a = 0.01 gives P = 0.204; a = 0.5 (network under attack) gives P = 0.40.
+- Few reviews: base rate pulls the answer strongly. Many reviews: u is tiny, so the base rate fades.
+
+**Warning:** P loses the "how much evidence" information. Keep the full opinion as long as possible and compute P only at the final decision (same idea as pignistic in DS).
+
+### 20. Step 4 — more than two outcomes (K states)
+
+With K states (normal, DDoS, scan, ...), disbelief disappears as a separate number (against one state = in favor of the others). An opinion becomes **(b₁, ..., b_K, u)**, with one shared u, all adding to 1.
+
+$$b_k=\frac{r_k}{K+\sum r}\qquad u=\frac{K}{K+\sum r}$$
+
+- **r_k** = a count of evidence seen for state k (windows a viewer called normal, DDoS-like, scan-like; or an EDL network's evidence output). SL starts after you have the counts; how a window gets classified is outside SL.
+- u depends only on **how much** evidence (Σr), not on **what** it says: 10 normal and 4 normal + 3 DDoS + 3 scan both give u = 3/13.
+- Check: Σb_k + u = 1 always (same denominator).
+
+Examples (K = 3):
+- 6 normal, 3 DDoS, 1 scan (10 windows): b = 6/13, 3/13, 1/13, u = 3/13.
+- Same 60/30/10 split with 1,000 windows: b = 0.6, 0.3, 0.1, u = 0.003.
+- 4 normal, 1 DDoS, 0 scan (5 windows): b = 4/8, 1/8, 0, u = 3/8. **b_scan = 0 means "no evidence for scan yet", not "impossible"**; with a_scan = 0.03, P_scan = 0.03 × 0.375 ≈ 0.011.
+
+Per-state probability with per-state base rates (sum to 1, e.g. normal 0.90, DDoS 0.07, scan 0.03):
+
+$$P_k = b_k + a_k\cdot u$$
+
+Example (6/3/1, u = 0.23): P = 0.67, 0.25, 0.08 (sum 1). A brand-new device gives P_k = a_k.
+
+**Honest note on the "+K":** using K as the starting doubt (and u = K / (K + Σr)) is the EDL convention and matches a uniform base rate. In the standard multinomial SL literature the non-informative prior weight is usually 2 regardless of K. Verify which convention to use before writing formulas in the paper.
+
+### 21. Step 5 — combining viewers (fusion)
+
+Two friends who ate at the same restaurant 3 and 2 times together have seen 5 meals. Averaging opinions loses that. Counting evidence keeps it.
+
+**Cumulative fusion (viewers saw different events): add the counts, then recompute.**
+- Viewer 1 (4, 1, 0) + Viewer 2 (3, 2, 0) = (7, 3, 0), bottom 13: b = 7/13, 3/13, 0, u = 3/13 (smaller than 3/8 for viewer 1 alone).
+- Disagreement example: A (2, 0, 0) + B (0, 2, 0) = (2, 2, 0): b = 2/7, 2/7, 0, u = 3/7. Beliefs tie, u is still fairly high (each alone had u = 3/5).
+
+**Limit:** SL has no separate conflict number like K in Dempster's rule. Read the fused opinion with two questions:
+- tie + high u: not enough evidence yet, keep watching
+- tie + low u: viewers genuinely disagree, investigate (e.g. 200 vs 200 gives u about 0.007)
+
+**Averaging fusion (viewers saw the SAME events): average the counts, then recompute.**
+- Detector 1 (3, 1, 0), Detector 2 (1, 3, 0), same 4 windows. Average (2, 2, 0): b = 2/7, 2/7, 0, u = 3/7.
+- Adding would give (4, 4, 0), u = 3/11, which says "8 windows seen" when only 4 happened (overconfident).
+- Rule of thumb: different events = add; same events = average; partly overlapping = no clean answer, state the assumption.
+
+**Caution:** this is the intuition via counts. SL defines these operators formally on opinions (b, u), with more variants (for example for conflicting viewers). Verify the formal definitions in the literature before citing formulas.
+
+### 22. Step 6 — trust (discounting a viewer)
+
+Like a friend with bad taste: you don't turn their opinion into "bad restaurant", you turn it into "I'm less sure what this tells me". Discounting moves belief into uncertainty, not disbelief.
+
+Trust t in [0, 1] (1 = fully trusted, 0 = ignored):
+
+$$b_k' = t\cdot b_k \qquad u' = 1 - t\sum b_k$$
+
+- Example: b = (0.5, 0.125, 0), u = 0.375, t = 0.5 gives (0.25, 0.0625, 0), u' = 0.6875.
+- Example: b = (0.6, 0.2, 0), u = 0.2, t = 0.5 gives (0.3, 0.1, 0), u' = 0.6.
+- Shortcut: u' = 1 minus the beliefs that remain.
+- t = 1: no change. t = 0: all belief gone, u = 1 (viewer ignored).
+- Same idea as DS discounting (Section 13.6). SL gives the mechanism, not the value of t. Choosing t (for example a WiFi-trained viewer on 5G) is still the open question from Section 13.6.
+
+### 23. Step 7 — how SL connects to DS and EDL
+
+- An SL opinion is a **DS mass function** with mass on single states plus Ω. **u = m(Ω).**
+- **EDL = SL formulas.** EDL's evidence e_k is SL's r_k; b_k = e_k / S, u = K / S with S = K + Σe. EDL is a network that produces the counts, SL is the framework that interprets them.
+- With a uniform base rate a_k = 1/K: P_k = b_k + u/K = (e_k + 1)/S, which is exactly EDL's p_k = α_k / S. SL generalizes this to unequal base rates (important for security, where attacks are rare).
+
+| | DS | Subjective logic | EDL |
+|---|---|---|---|
+| Mass on groups like {D, S} | Yes | Basic version: no | No |
+| Base rate | No | Yes | Implicitly uniform (1/K) |
+| Combining viewers | Dempster / Yager | Cumulative / averaging fusion | Not by itself |
+| Trust | Discounting | Discounting | No |
+| Conflict number K | Yes | No | No |
+
+Caution: SL count-based fusion is not the same operation as Dempster's rule, so answers can differ.
+
+### 24. DS refresher — Dempster and Yager (recap from Section 13)
+
+- Mass functions give mass to groups (including Ω = "don't know"). Combine with the grid: cell = overlap (where) and product (how much); empty overlap = conflict K.
+- **Dempster:** discard K and divide the rest by 1 − K. Can give false confidence (Zadeh: K = 0.9999 gives tumor = 1.0).
+- **Yager:** no division; add K to Ω. High conflict becomes "don't know" (Zadeh: Ω = 0.9999). Same answer as Dempster when K = 0.
+- Always report K. Yager's behavior fits 0-day detection better; cost is more alerts and non-associativity (order of combining can matter).
+- Worked example (viewer 1 {N} 0.6, Ω 0.4; viewer 2 {D} 0.5, Ω 0.5): K = 0.30. Dempster gives N 0.43, D 0.29, Ω 0.29. Yager gives N 0.30, D 0.20, Ω 0.50.
+
+### 25. Reference answers for pending checks (not yet answered by me in the session)
+
+- **EDL [2, 0, 1], K = 3:** S = 6, b = (1/3, 0, 1/6), u = 1/2, P = b + u/3 = (1/2, 1/6, 1/3), sums to 1.
+- **DS check** (viewer 1 {D} 0.4, Ω 0.6; viewer 2 {N} 0.5, Ω 0.5): cells ∅ 0.20, {D} 0.20, {N} 0.30, Ω 0.30; K = 0.20. Dempster (÷ 0.8): D 0.25, N 0.375, Ω 0.375. Yager: D 0.20, N 0.30, Ω 0.50.
+
+### 26. Next steps
+1. **SL Step 8:** apply SL to the IoT work (which viewers give the counts, where fusion and trust fit, what to test).
+2. Decide the SL prior-weight convention (K vs 2) and check the formal fusion operators (cumulative, averaging, conflicting) in the literature before using any formula in the paper.
+3. Remaining belief methods from the Section 8 table: Bayesian 1a/1b comparison design, fuzzy/possibility theory (related work only).
+4. Open from before: choosing t (or α) for a viewer on a new protocol; turning a non-EDL viewer's output into a mass function or evidence counts; testing independence between viewers.
+5. Experiment plan: Bayesian 1a / 1b vs DS (Dempster, Yager) vs SL vs EDL, with a held-out attack class on CICIoT2023 and 5G-NIDD.
+6. Still open from before: Q5 ground truth for RAIDEN; the P→Q fix in the RAIDEN paper.
