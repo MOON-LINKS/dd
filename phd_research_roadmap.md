@@ -3413,3 +3413,95 @@ Caution: SL count-based fusion is not the same operation as Dempster's rule, so 
 4. Open from before: choosing t (or α) for a viewer on a new protocol; turning a non-EDL viewer's output into a mass function or evidence counts; testing independence between viewers.
 5. Experiment plan: Bayesian 1a / 1b vs DS (Dempster, Yager) vs SL vs EDL, with a held-out attack class on CICIoT2023 and 5G-NIDD.
 6. Still open from before: Q5 ground truth for RAIDEN; the P→Q fix in the RAIDEN paper.
+---
+
+## UPDATE — 29 October 2026 (continued, new sections only; everything above is unchanged)
+
+### 27. The four jobs in a belief pipeline (why the new methods do not replace what was studied)
+
+
+| Already studied | Job it does | What it needs from the others |
+|---|---|---|
+| DS (Dempster, Yager) | 3 (fuse) | Needs masses as input, so job 2 must be done first |
+| Subjective logic | 2 and 3 | Needs evidence counts r_k from a viewer |
+| Bayesian belief | 2, 3, a bit of 4 | Needs likelihood tables (and a guessed prior for an "unknown" state) |
+| EDL | 1 and 2 | Does not fuse several viewers by itself |
+
+**Key point:** DS, EDL, SL and Bayesian are each complete, but at different jobs. The methods in Section 28 mostly do **job 1** (produce an "unfamiliar" signal) or act as **baselines** for it.
+
+**Example (one window, three viewers):** Viewer A = EDL network, gives evidence directly (mass {D} 0.6, {N} 0.2, Omega 0.2). Viewer B = GRU prediction residual, outputs "error 3x normal". Viewer C = Mahalanobis distance, outputs "9.2". B and C give numbers, not masses. DS cannot fuse a number, so a conversion rule is needed (for example, larger distance = more mass on Omega). The conversion rule shown is an illustration; choosing it is the open design item.
+
+**Where they also compete:** the planned test "does EDL's u fire on a held-out attack?" can be answered by Mahalanobis or an ensemble with no special training. If a simple score beats EDL's u, EDL's added complexity is not justified.
+
+### 28. Algorithms that can be added over EDL / DS / SL / Bayesian
+
+Verdicts: **STUDY** = step-by-step like SL; **KNOW** = short overview, enough to defend as a baseline; **SKIP** = not for this work; **RELATED** = mention in related work only. Items marked (bg) come from my background knowledge, not the search; verify before citing.
+
+| # | Method | Job | One-line idea | Verdict | What to know | Role in my experiments |
+|---|---|---|---|---|---|---|
+| 1 | Softmax max-probability | 1 | Low top probability = unfamiliar | KNOW | Simplest "unknown" baseline. A 2026 IoT botnet paper found classifier confidence anti-correlated with zero-day traffic (AUROC 0.32) | Mandatory baseline |
+| 2 | Energy score | 1 | Log-sum-exp of the logits replaces confidence | KNOW | Free from a trained classifier; already used in IoT-traffic OOD work | Mandatory baseline |
+| 3 | Mahalanobis / KNN distance | 1 | Distance of the window's features from known traffic | KNOW | Density-style score; DA-DCC-IDS (IEEE Access 2026) uses a per-device Mahalanobis density for open-set IoT detection | Mandatory baseline, and a candidate viewer |
+| 4 | Deep ensembles | 1 | Train several networks; disagreement = uncertainty | KNOW | Often better uncertainty than MC dropout but costs several models (hub compute) | Mandatory baseline for EDL |
+| 5 | MC dropout | 1 | Keep dropout on at test time, run many passes | KNOW | Cheap; the IoT botnet paper's uncertainty gate reached AUROC 0.66 (weak, so a low bar) | Baseline |
+| 6 | Conformal prediction | 1 (wraps any viewer) | Output a prediction SET with a coverage guarantee; large or empty set = unfamiliar | **STUDY** | Guarantee assumes calibration data resembles test data, which a true 0-day breaks. Used for IoT drift (FIRCE 2026) and botnet detection. Set size could be a POMDP observation | Strong complementary method; test with and without it |
+| 7 | Reconstruction error + uncertainty (autoencoder / VAE) | 1 | High reconstruction error = unusual | KNOW | Same idea as the GRU residual already in the design | Compare the GRU residual against it |
+| 8 | Single-pass UQ (SNGP, DUQ, DDU) | 1 | Uncertainty from distance in feature space, one forward pass | KNOW (optional) | Fits hub compute limits; no IoT-security use found | Only if compute becomes the constraint |
+| 9 | Prior Networks (Dirichlet) | 1, 2 | Like EDL but trained to output a flat Dirichlet on out-of-distribution data | KNOW | Needs OOD training data, which a 0-day does not provide. Close cousin of EDL | Related work |
+| 10 | Bayesian neural nets (HMC, Laplace) | 1 | Weights as distributions | SKIP | Principled but heavy | Mention only |
+| 11 | Gaussian-process OOD | 1 | Uncertainty from a GP over scores | SKIP | Needs only in-distribution data but scales poorly | Mention only |
+| 12 | Particle filters (bg) | 2, 3 | Belief as weighted samples for non-linear updates | SKIP for now | Found only in cyber-physical systems; revisit if the belief update becomes non-linear | Mention only |
+| 13 | HMM / deep HMM (attack stages) | 2, 3 | Hidden stage with sequential belief | RELATED | HMM stage estimation degrades under interleaved attacks; the POMDP already generalizes it | Sequential baseline |
+| 14 | Credal sets / credal and evidential networks / TBM | 2, 3 | Sets of probabilities; belief-function cousins | RELATED | Compared with DS in infrastructure security assessment, not IoT intrusion; TBM underlies the pignistic step | Related work only |
+| 15 | Other DS combination rules (Murphy averaging, Dubois-Prade, PCR5) | 3 | Alternatives to Dempster and Yager for conflict | KNOW | One paragraph in the paper; many lose associativity or commutativity | Optional extra arm |
+| 16 | Hybrid fusion pipelines (ZeroDefense-style) | 1 to 3 | Several detectors plus a low-confidence fallback | RELATED | Engineering pattern; reports about 5.76% of flows flagged for zero-day review | Related work |
+| 17 | Fuzzy / possibility theory | 2 | Degrees of membership for vague statements | **PENDING (not yet studied)** | Handles vagueness, not conflict or missing evidence; Fezzani thesis (EVEREG) combines fuzzy sets with DS. EDL survey notes the two could be integrated by representing fuzzy memberships as subjective opinions | One-page overview next |
+
+**Priority order:** (1) cheap baselines 1 to 5, (2) conformal prediction (step by step), (3) fuzzy overview, (4) everything else only if a reviewer asks.
+
+### 29. Papers close to this work (first-pass, snippet or abstract level)
+
+Verification: READ = abstract/snippet seen; VERIFY = authors, numbers or wording must be checked against full text. None read in full.
+
+| # | Paper | What it did | Relevance | Gap versus my work | Status |
+|---|---|---|---|---|---|
+| 1 | Purkaystha, Gandhi, Kumar, "Uncertainty-Aware Zero-Day Botnet Detection for IoT Networks with Real-World Edge Deployment", Sensors 26(18) 5863, 2026 | MC-dropout gate; softmax confidence AUROC 0.32 on zero-day traffic, gate AUROC 0.66, Mirai catch rate 13.75%; edge hardware tests | Shows overconfidence and a low bar for uncertainty baselines | MC dropout only; no belief fusion | READ; VERIFY numbers |
+| 2 | Fawaz et al., "Detecting Zero-Day Attacks via Reconstruction of Explanation-Driven Reconstruction Error and Predictive Uncertainty", IEEE TNSM, 2026 | Combines reconstruction error and predictive uncertainty (epistemic) for zero-day identification | Same job as the GRU residual plus uncertainty | Single pipeline, no multi-viewer belief | READ (snippet); VERIFY title and authors |
+| 3 | Talpini, Sartori, Savi, "Enhancing Trustworthiness in ML-Based NIDS with Uncertainty Quantification", J. Reliable Intelligent Environments 10(4), 2024 (arXiv 2310.10655) | Compares uncertainty-aware models and open-set classifiers for NIDS; proposes a Bayesian NN model | Closest UQ comparison for NIDS | One dataset; neural-network UQ, not belief-fusion theories | READ |
+| 4 | Corsini and Yang, "Are Existing Out-Of-Distribution Techniques Suitable for Network Intrusion Detection?" (arXiv 2308.14376) | Studies six OOD techniques for NIDS | Warns that OOD methods may not transfer to network traffic | Not belief theories | READ |
+| 5 | "Neurosymbolic AI for Robust NIDS" (arXiv 2506.04454) | Evaluates UQ methods for misclassification detection and open-set recognition on CIC-IDS-2017 and ACI-IoT-2023 | Closest multi-dataset UQ comparison found | Unknown whether EDL, DS or SL are included; check | READ (snippet); read in full first |
+| 6 | Barrett, Li, Dorai, Rajaganapathy, "FIRCE", arXiv 2605.01962, 2026 | Conformal evaluation plus drift detection for IDS on a 10-device IoT testbed | Conformal prediction in IoT | Drift and retraining, not belief | READ |
+| 7 | "Comprehensive Botnet Detection ... Conformal Layers" (arXiv 2409.00667) | Conformal layer rejects incorrect predictions (58.20% on ISCX, 98.94% on ISOT) | Conformal prediction in NIDS | Not zero-day belief | READ; VERIFY figures |
+| 8 | "A Comprehensive Survey on Evidential Deep Learning and Its Applications" (arXiv 2409.04720) | Conceptual comparison of EDL with DS, subjective logic, imprecise Dirichlet model, fuzzy logic | Best theory-level comparison of my methods | No intrusion datasets | READ |
+| 9 | "Evidential Deep Learning for Multi-Modal Anti-UAV Detection" (EviDS-UAV, arXiv 2609.01742) | EDL objective improved accuracy; DS fusion did not beat probability averaging when conflict was nearly absent | Warning for my DS/Yager arms | Drone detection, not security | READ |
+| 10 | DS-based hybrid IDS evaluated on NGIDS-DS and 5G-NIDD plus a 5G testbed (98.67% accuracy; Dempster's rule over three feature types) | DS alone applied to 5G data | Closest 5G + DS | Compared only to ordinary IDS baselines. The snippet mixed several papers, so find the exact title and authors | READ (snippet); VERIFY |
+| 11 | Debicha and Debatty, "Efficient Intrusion Detection Using Evidence Theory" (arXiv 2103.08585) | Contextual discounting by source reliability and distinguishing ability | Directly relevant to the open question of choosing alpha or t | Not IoT-specific | READ |
+| 12 | Yu and Frincke, "Alert Confidence Fusion in IDS with Extended Dempster-Shafer Theory", ACMSE 2005 | Exponentially weighted DS for alert fusion | Early DS fusion for IDS | DARPA data, old | READ |
+| 13 | Chen and Venkataramanan (verify), "Dempster-Shafer Theory for Intrusion Detection in Ad Hoc Networks", IEEE Internet Computing 2005 | DS vs Bayesian for combining unreliable observing nodes | Early DS vs Bayesian argument | Old; ad hoc networks | READ (snippet); VERIFY authors |
+| 14 | Kent (MSc thesis, University of Windsor), DDoS alert fusion with DS and subjective logic | Combines DS rule and subjective logic with an IDS reliability factor | Only SL + DS intrusion work found | Thesis, not a benchmark | READ |
+| 15 | Hamda, Hadjali, Lagha, "Multisensor Data Fusion in IoT Environments in DS Setting", Sensors 23(11) 5141, 2023 | Improved evidence-distance combination for conflicting IoT evidence | Alternative conflict handling for IoT | Sensor fusion, not intrusion | READ |
+| 16 | Smarandache and Dezert (verify), PCR rule paper (arXiv cs/0408010) | Compares Dempster, Yager, Dubois-Prade, Murphy, PCR rules | Reference for combination rules | General fusion | READ (snippet); VERIFY authors |
+| 17 | Dinesh et al., "DA-DCC-IDS", IEEE Access, 2026 | Open-set rejection with per-device Mahalanobis density; AUROC 0.961 / 0.973 / 0.946 on TON_IoT / IoT-23 / N-BaIoT | Multi-dataset IoT zero-day baseline with leak-free protocol | Compared with deep-learning baselines, not belief theories | READ; VERIFY |
+| 18 | "BRIDGE and TCH-Net" (arXiv 2604.11324, 2026) | Cross-domain IoT botnet benchmark; mean LODO F1 about 0.56 | Cross-environment evaluation protocol to borrow | Not belief | READ |
+| 19 | Malinin and Gales (verify), "Prior Networks for Detection of Adversarial Attacks" (arXiv 1812.02575) | Dirichlet prior network needing OOD training data | EDL cousin | Needs OOD data | READ (snippet) |
+| 20 | "Architectures for Detecting Interleaved Multi-stage Network Attacks Using HMMs" (arXiv 1807.09764) | HMM stage belief; accuracy degrades with interleaving | Sequential-belief baseline | Not IoT-specific | READ |
+
+### 30. Findings and cautions from this search
+
+1. **No paper found that compares Bayesian, DS (Dempster/Yager), subjective logic and EDL head to head on several IoT, 5G and other datasets and selects a best method.** Not found in these searches; this is not proof it does not exist.
+2. **This comparison is therefore a candidate contribution** (matches Section 2), if a database sweep confirms.
+3. **Warning from paper 9:** DS fusion did not beat probability averaging when conflict was nearly absent. Include a probability-averaging baseline, report K, and test on data where viewers actually disagree.
+4. **Warning from paper 1:** softmax confidence can be anti-correlated with zero-day traffic, and an MC-dropout gate reached only 0.66 AUROC. Weak baselines are easy to beat, so use strong ones (ensemble, energy, Mahalanobis, conformal).
+5. **No paper found placing any of these belief methods inside a POMDP belief update for IoT** (shallow search; verify).
+6. Everything above is from snippet-level searches. Read papers 3, 5 and 10 in full first.
+
+### 31. Next steps
+
+1. Decide with the supervisor whether the multi-method belief comparison is a contribution or only an ablation.
+2. Run the database sweep: ("Dempster-Shafer" OR "subjective logic" OR "evidential deep learning") AND ("intrusion detection" OR "zero-day") AND (comparison OR benchmark); also ("conformal") AND (IoT) AND ("zero-day" OR "novel attack").
+3. Learn briefly: energy, Mahalanobis, ensembles, MC dropout (baselines).
+4. Study step by step: conformal prediction.
+5. One-page fuzzy / possibility overview (item 17 in Section 28), then close the method list.
+6. Open from before: how a non-EDL viewer's output becomes a mass function or evidence counts; choosing trust t or alpha per environment; testing independence between viewers; SL Step 8 (applying SL to the IoT pipeline); SL prior-weight convention (K vs 2).
+7. Carry forward all open items from earlier sections.
+
