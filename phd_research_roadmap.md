@@ -3505,3 +3505,106 @@ Verification: READ = abstract/snippet seen; VERIFY = authors, numbers or wording
 6. Open from before: how a non-EDL viewer's output becomes a mass function or evidence counts; choosing trust t or alpha per environment; testing independence between viewers; SL Step 8 (applying SL to the IoT pipeline); SL prior-weight convention (K vs 2).
 7. Carry forward all open items from earlier sections.
 
+---
+
+## UPDATE — 30 October 2026 (new section only; everything above is unchanged)
+
+Today: fuzzy logic from zero, in 7 short steps (Section 32). It closes the method list from Section 28 (item 17).
+
+### 32. Fuzzy logic — what it is and where it fits
+
+**Core idea:** Bayesian, DS, SL and EDL deal with *not knowing* something (missing evidence, conflicting viewers). Fuzzy logic deals with a different problem: **words with no sharp edge** ("hot", "high traffic rate"). It lets a statement be **partly true**.
+
+**Step 1 — membership degree.** Every value gets a number μ (mu) in [0, 1]: how much it fits a vague word. 1 = fully fits, 0 = does not fit, in between = partly fits.
+- "28 degrees is hot": a yes/no rule at 30 degrees calls 29.9 "not hot" and 30.1 "hot". Fuzzy says 28 is hot to degree 0.6.
+- **Not probability:** a person exactly 1.75 m tall is "tall to degree 0.6". There is no uncertainty about the height; the *word* is vague. Probability would mean "I am unsure of the facts".
+
+| | What it handles |
+|---|---|
+| Bayesian | uncertainty about which state is true |
+| DS / SL / EDL | missing evidence and conflict between sources |
+| Fuzzy | vagueness in the meaning of a word |
+
+**Step 2 — membership functions (where μ comes from).** μ is not an opinion from anyone. It is a formula applied to a measured number, using a hand-drawn shape with cut-off points that are **design choices** (expert-set or tuned on data).
+- Ramp for "high rate": μ = 0 at or below 200 packets/s, μ = 1 at or above 1,000, straight line between.
+  μ_high(700) = (700 − 200) / (1000 − 200) = 500 / 800 = **0.625** (700 is 62.5% of the way from "not high" to "fully high").
+
+| Rate (packets/s) | μ(high) |
+|---|---|
+| 200 | 0 |
+| 400 | 0.25 |
+| 600 | 0.5 |
+| 700 | 0.625 |
+| 1,000 | 1 |
+
+- Triangle for "medium" (peak 600, zero at 200 and 1,000): μ_medium(700) = 1 − 100/400 = **0.75**. Words overlap: 700 is "medium" to 0.75 and "high" to 0.625 at once.
+- Peers (= number of other devices contacted in the window, not people): "many" = ramp from 5 to 25, so μ_many(20) = 15/20 = **0.75**; "few" = the opposite ramp, μ_few(20) = **0.25**.
+- A different expert choosing 300 and 800 as cut-offs would get a different μ. This is the main weakness (see caveats).
+
+**Step 3 — AND, OR, NOT (standard min/max version).**
+
+| Operator | Rule | Example (μ_high = 0.625, μ_many = 0.75) |
+|---|---|---|
+| AND | smaller value (min) | min(0.625, 0.75) = 0.625 |
+| OR | larger value (max) | max(0.625, 0.75) = 0.75 |
+| NOT | 1 minus the value | 1 − 0.625 = 0.375 |
+
+AND = "as true as the weakest part". Other versions exist (for example product instead of min).
+
+Worked checks (device with rate 700 and 20 new peers, μ_high = 0.625, μ_few = 0.25, μ_many = 0.75):
+- NOT(μ_high) = 1 − 0.625 = **0.375**
+- OR(μ_high, μ_few) = max(0.625, 0.25) = **0.625**
+- Reference answers for the follow-up check (not yet answered by me in the session): AND(μ_high, μ_few) = min(0.625, 0.25) = **0.25**; NOT(μ_many) = 1 − 0.75 = **0.25**, which equals μ_few because "few" was defined as the opposite of "many".
+
+**Step 4 — IF-THEN rules.** Rules are written the way an operator talks. Each gets a **firing strength** = AND of its conditions.
+- Rule 1: IF rate is high AND peers are many THEN suspicion is high. Strength = min(0.625, 0.75) = **0.625**.
+- Rule 2: IF rate is medium AND peers are few THEN suspicion is low. Strength = min(0.75, 0.25) = **0.25**.
+- Both rules fire at once, to different degrees. That is normal.
+
+**Step 5 — back to one number (defuzzification).** Give each rule's output a typical value (high suspicion = 0.9, low = 0.1) and take a weighted average by firing strength:
+suspicion = (0.625 × 0.9 + 0.25 × 0.1) / (0.625 + 0.25) = 0.5875 / 0.875 ≈ **0.67**.
+This is one common method (weighted average); the centroid method gives similar results.
+
+**Step 6 — comparison with the methods already studied.**
+
+| | Handles | Output | Conflict number | Evidence amount |
+|---|---|---|---|---|
+| Fuzzy | vague words | degrees of fit (μ) | No | No |
+| Bayesian | which state is true | probabilities | No | No |
+| DS | grouped belief, conflict | masses, K | Yes | No |
+| SL | amount of evidence | (b, u) | No | Yes (u) |
+| EDL | learned evidence | (b, u) | No | Yes (u) |
+
+A fuzzy 0.6 is not a probability, so it cannot be fed into Bayes' rule directly.
+
+**Step 7 — what it means for this work.**
+- **Possible use as a converter (my suggestion, untested):** membership degrees (for example μ_high of the GRU residual) could be turned into masses or evidence counts. This touches the open question "how does a non-EDL viewer's output become a mass function?". The EDL survey (arXiv 2409.04720) notes that fuzzy memberships can be represented as subjective opinions, so a bridge exists in principle.
+- **Readable rules:** "IF rate high AND peers many THEN suspicious" can be read by an operator, which helps explainability.
+- **Fezzani link (from earlier notes):** the thesis (EVEREG) combines fuzzy sets with DS, so a worked fuzzy + DS hybrid precedent exists. A reviewer who knows it may ask.
+
+**Caveats / weaknesses for 0-day detection:**
+- Membership shapes and cut-offs are hand-chosen from knowledge of known traffic, the same kind of weakness as the guessed "unknown" prior in Bayesian 1b.
+- It has no "how much evidence" number (no u) and no conflict measure (no K).
+- Fuzzy intrusion-detection literature was **not searched**, so I cannot say how crowded that area is. Verify before any novelty claim.
+
+**Verdict: KNOW, not a core method.** Keep as an optional converter (number to belief) and as related work next to the other belief theories.
+
+### 33. One-line summary table (fuzzy)
+
+| Step | One line |
+|---|---|
+| 1 | μ in [0, 1] says how much a value fits a vague word (not a probability) |
+| 2 | μ comes from hand-drawn shapes (ramp, triangle) with chosen cut-offs |
+| 3 | AND = min, OR = max, NOT = 1 − μ |
+| 4 | IF-THEN rules get a firing strength |
+| 5 | A weighted average turns the rules back into one number |
+| 6 | Fuzzy = vagueness, not uncertainty or conflict |
+| 7 | Useful as a converter and for readable rules, not as a core 0-day method |
+
+### 34. Status of the method list and next steps
+
+1. **Method list closed:** Bayesian, DS (Dempster, Yager), EDL, SL and fuzzy are all studied. Section 28 (extra methods) is the reference for what remains.
+2. **Next topics, in suggested order:** (a) cheap baselines (softmax max-probability, energy, Mahalanobis, ensembles, MC dropout), short overviews; (b) conformal prediction, step by step.
+3. Open from before: how a non-EDL viewer's output becomes a mass function or evidence counts (fuzzy is now one candidate converter, untested); choosing trust t or alpha per environment; testing independence between viewers; SL Step 8 (applying SL to the IoT pipeline); SL prior-weight convention (K vs 2).
+4. Run the database novelty sweep before claiming novelty for the multi-method belief comparison (Section 30), and add a fuzzy + intrusion detection query to it.
+5. Carry forward all open items from earlier sections.
