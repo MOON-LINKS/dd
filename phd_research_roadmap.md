@@ -3754,3 +3754,221 @@ Fuzzy lands between the two crisp choices: it keeps partial agreement instead of
 4. Run the database novelty sweep (Section 31, plus a fuzzy + intrusion detection query) before claiming novelty for the multi-method belief comparison.
 5. Read Fezzani's thesis itself (French original) to confirm the details taken from the English guide before citing any equation.
 6. Carry forward all open items from earlier sections.
+
+
+---
+
+## UPDATE — 2 November 2026 (continued, new sections only; everything above is unchanged)
+
+Today: overview of the cheap baselines and conformal prediction (Section 44), how they relate to the belief frameworks already studied (Section 45), and how to run a fair comparison (Sections 46 to 48). Sections 35 to 43 stay as they are. Library names and APIs are from background knowledge and were not checked against current versions; verify before the real runs.
+
+### 44. Cheap baselines and conformal prediction: overview
+
+All of these answer the same job (job 1 from Section 27): **how unfamiliar is this window?** Each one turns a trained classifier into a number where higher means more novel. The test is whether that number separates the held-out attack family from known traffic, measured by AUROC.
+
+**Shared setup for every snippet:**
+
+```python
+# model: a classifier trained on KNOWN classes (normal, DDoS, scan, ...)
+# x: a batch of traffic-window features, shape (N, features)
+logits = model(x)          # shape (N, K), K = number of known classes
+
+from sklearn.metrics import roc_auc_score
+# y_novel = 1 for held-out attack windows, 0 for known traffic
+auroc = roc_auc_score(y_novel, score.detach().cpu().numpy())
+```
+
+**44.1 Softmax max-probability (MSP)**
+- Idea: take the top softmax probability. If even the best class gets a low probability, the window looks unfamiliar.
+- Weakness: a network can say "DDoS 97%" on traffic it has never seen. The 2026 IoT botnet paper (Section 29, paper 1) found confidence anti-correlated with zero-day traffic (AUROC 0.32; verify). Mandatory, weakest baseline.
+- Library: plain PyTorch; `pytorch-ood` has a `MaxSoftmax` detector (check API).
+
+```python
+import torch.nn.functional as F
+probs = F.softmax(logits, dim=1)
+score = 1 - probs.max(dim=1).values   # high = more novel
+```
+
+**44.2 Energy score**
+- Idea: same logits, different compression. Take the log-sum-exp of the raw logits instead of softmax. Familiar inputs give large logits and low energy; unfamiliar inputs give higher energy. No retraining needed.
+- Library: plain PyTorch (`torch.logsumexp`), or `pytorch-ood` `EnergyBased`.
+
+```python
+T = 1.0
+score = -T * torch.logsumexp(logits / T, dim=1)   # high energy = more novel
+```
+
+**44.3 Mahalanobis (or KNN) distance**
+- Idea: ignore the classifier's opinion and measure how far the window's features are from known traffic. Per class: a mean and a shared covariance. Score = distance to the nearest class. Works on penultimate-layer features or directly on traffic features.
+- Why it matters: a density-style score that does not depend on softmax, and a candidate viewer for the DS pipeline.
+- Libraries: `scikit-learn` (`EmpiricalCovariance`; `NearestNeighbors` for KNN), `numpy`.
+
+```python
+import numpy as np
+from sklearn.covariance import EmpiricalCovariance
+
+classes = np.unique(y_train)
+means = {c: feats_train[y_train == c].mean(0) for c in classes}
+centered = np.vstack([feats_train[y_train == c] - means[c] for c in classes])
+cov = EmpiricalCovariance(assume_centered=True).fit(centered)
+
+def maha_score(feats):
+    d = np.stack([cov.mahalanobis(feats - means[c]) for c in classes], axis=1)
+    return d.min(axis=1)          # high = far from all known classes
+```
+
+**44.4 Deep ensembles**
+- Idea: train several copies with different seeds. They agree on familiar traffic and tend to disagree on unfamiliar traffic; the disagreement is the signal. Often the strongest simple baseline, so EDL must beat it to justify its complexity.
+- Cost: N models at inference (matters on hub-class hardware).
+- Library: plain PyTorch.
+
+```python
+models = [train_one(seed=s) for s in range(5)]
+probs = torch.stack([F.softmax(m(x), dim=1) for m in models])   # (5, N, K)
+mean_p = probs.mean(0)
+entropy_total = -(mean_p * mean_p.clamp_min(1e-12).log()).sum(1)
+entropy_each  = -(probs * probs.clamp_min(1e-12).log()).sum(2).mean(0)
+score = entropy_total - entropy_each    # mutual information = disagreement
+```
+
+**44.5 MC dropout**
+- Idea: a cheap ensemble from one network. Keep dropout on at test time and run the same window T times; the spread of the answers is the uncertainty.
+- Caution: the botnet paper's MC-dropout gate reached only AUROC 0.66 (verify), so it is a weak, easy-to-beat baseline.
+- Library: plain PyTorch.
+
+```python
+import torch.nn as nn
+model.eval()
+for m in model.modules():
+    if isinstance(m, nn.Dropout):
+        m.train()                          # re-enable only dropout layers
+
+T = 30
+probs = torch.stack([F.softmax(model(x), dim=1) for _ in range(T)])   # (T, N, K)
+mean_p = probs.mean(0)
+entropy_total = -(mean_p * mean_p.clamp_min(1e-12).log()).sum(1)
+entropy_each  = -(probs * probs.clamp_min(1e-12).log()).sum(2).mean(0)
+score = entropy_total - entropy_each
+```
+
+**44.6 Conformal prediction (to be studied step by step; only the overview is done)**
+- Idea: instead of one class, output a **set of classes** guaranteed to contain the true class with probability at least 1 − alpha (e.g. 90%). Calibrate once on held-out labeled data.
+
+| Set | Meaning |
+|---|---|
+| One class | Confident |
+| Several classes | Ambiguous |
+| Empty set | Nothing fits, possibly unfamiliar |
+
+- The set size can become an observation for the POMDP.
+- **Limit of the guarantee:** it assumes calibration data resembles test data (exchangeability). A true 0-day breaks this, so the coverage promise does not hold for novel attacks. Use conformal as a complementary signal and test it, not as proof of safety. It fits IoT drift well (FIRCE-style work, Section 29 paper 6).
+- Libraries: `MAPIE` (scikit-learn style; API changed in v1, check version), `crepes` (lightweight), `TorchCP` (PyTorch), or by hand (about 10 lines, best for learning):
+
+```python
+import numpy as np
+
+cal_probs = softmax_probs_cal            # (n, K), held-out labeled data
+cal_true  = y_cal                        # (n,)
+alpha = 0.10                             # target 90% coverage
+
+scores = 1 - cal_probs[np.arange(len(cal_true)), cal_true]   # nonconformity
+n = len(scores)
+q = np.quantile(scores, np.ceil((n + 1) * (1 - alpha)) / n, method="higher")
+
+test_probs = softmax_probs_test          # (m, K)
+pred_sets = test_probs >= 1 - q          # boolean (m, K)
+set_size = pred_sets.sum(axis=1)         # 0 nothing fits, 1 sure, >1 ambiguous
+novel_score = (set_size != 1).astype(float)
+```
+
+**Summary**
+
+| Method | Where the "unfamiliar" signal comes from | Extra cost | Library |
+|---|---|---|---|
+| Softmax max-prob | Top class probability | None | PyTorch (`pytorch-ood`) |
+| Energy | Log-sum-exp of logits | None | PyTorch (`pytorch-ood`) |
+| Mahalanobis / KNN | Distance in feature space | Store means and covariance | scikit-learn, numpy |
+| Deep ensembles | Disagreement between N networks | N x training and inference | PyTorch |
+| MC dropout | Disagreement between T passes | T x inference | PyTorch |
+| Conformal | Size of the prediction set | Needs a calibration split | MAPIE, crepes, TorchCP, or by hand |
+
+### 45. How these relate to Bayesian, DS, SL, EDL, fuzzy
+
+**Two different kinds of method:**
+- **Belief frameworks (Bayesian, DS, SL, EDL, fuzzy):** ways of *representing and combining* uncertainty (what the numbers mean, how viewers merge, how ignorance and conflict stay apart).
+- **Novelty scores (softmax, energy, Mahalanobis, ensembles, MC dropout, conformal):** ways of *producing one number* saying "this window looks unfamiliar". No theory of fusion, trust or conflict.
+- Analogy: the scores are thermometers; the belief frameworks are the doctor's way of reasoning from several readings.
+
+**Where each fits in the four jobs (Section 27):**
+
+| Job | What it does | Who does it |
+|---|---|---|
+| 1. Produce an "unfamiliar" signal | Window to novelty number | Softmax, energy, Mahalanobis, ensembles, MC dropout, conformal, **and EDL** |
+| 2. Turn the signal into a belief | Give it meaning: mass, (b, u), probability | DS, SL, Bayesian (EDL also does this) |
+| 3. Fuse several viewers | Merge with conflict and trust | DS (Dempster/Yager), SL fusion, Bayesian |
+| 4. Decide | Pick an action | POMDP/PPO (+ pignistic/BetP) |
+
+**EDL is the overlap:** it is the only studied method that also produces the novelty signal itself (its u). So it competes directly with the baselines in job 1. The other baselines are not rivals of DS; they are **inputs** to DS.
+
+**Where "unknown" comes from, per method:**
+
+| Method | Source of "unknown" |
+|---|---|
+| Softmax / energy | Shape of the logits (no special training) |
+| Mahalanobis | Distance from known traffic in feature space |
+| Ensembles / MC dropout | Disagreement between passes |
+| EDL | Network learns to output low evidence, giving high u |
+| Bayesian 1b | Extra state with a guessed prior |
+| DS | Mass on Omega, built by hand from each viewer |
+| Conformal | Size of the prediction set (a wrapper, not a score from the model itself) |
+
+### 46. Two separate comparisons (do not mix them)
+
+**Comparison A, which signal best spots a novel attack? (job 1)**
+- Competitors: softmax, energy, Mahalanobis, ensembles, MC dropout, conformal, EDL's u.
+- Fairness: same data, same held-out attack family, same backbone architecture, same metric (AUROC), thresholds chosen on validation not test.
+- EDL exception: it needs a different last layer and loss; keep the architecture otherwise identical.
+- Decision rule (set before running): if a cheap score beats EDL's u by the pre-set margin, EDL's extra complexity is not justified.
+
+**Comparison B, which framework handles the signals best? (jobs 2 and 3)**
+- Competitors: Bayesian 1a/1b, DS (Dempster and Yager), SL, fuzzy as a converter.
+- Fairness: every framework receives the same viewers' outputs (same signals, same split), converts them into its own format, fuses them and produces a decision.
+- Report: K, ignorance (m(Omega) or u), and a **probability-averaging baseline** (paper 9 in Section 29: DS did not beat averaging when conflict was nearly absent).
+- Test on data where viewers actually disagree.
+
+**Order:** A first (it picks the viewers), then B. B can only be judged fairly after A.
+
+### 47. Do all signals plug into all frameworks? Not directly
+
+Each signal has a different shape, so each needs a converter. This is the open "how does a viewer's output become a mass function?" item.
+
+| Signal | What it looks like | Natural fit | Needs conversion for |
+|---|---|---|---|
+| Softmax probs | Distribution over known classes | Bayesian | DS and SL (no evidence amount in it) |
+| Energy, Mahalanobis | One scalar | Nothing directly | Everything (e.g. calibrated score to mass on Omega) |
+| Ensemble | Several distributions plus disagreement | SL (votes as counts) | DS |
+| MC dropout | Same as ensemble | SL | DS |
+| EDL | (b, u), already evidence | DS and SL | Almost nothing |
+| Conformal | A set of classes | DS (a set maps to mass on a group like {D,S}; my suggestion, untested) | Bayesian |
+
+Example: Mahalanobis gives "9.2". A conversion rule (larger distance means more mass on Omega) turns it into a mass function, which DS then fuses with the EDL viewer's (b, u).
+
+### 48. The catch: the converter can decide the result
+
+If Mahalanobis scores well inside DS only because of how distance was mapped to Omega mass, the experiment measures the converter, not the framework. Rules:
+- [ ] Fix each signal's conversion rule before looking at test results.
+- [ ] Give every arm an equal tuning budget.
+- [ ] Run a sensitivity check: change the conversion rule and see whether the ranking flips.
+- [ ] Separate tuning and evaluation seeds; grid-edge check on every tuned parameter.
+- [ ] Choose all thresholds on validation, never test.
+- [ ] A negative result (cheap baseline beats EDL, or averaging beats DS) is reportable.
+
+### 49. Next steps
+
+1. Step-by-step conformal prediction walkthrough (only the overview exists).
+2. Draft the experiment table for Comparison A and Comparison B (arms, data split, held-out family, metrics, thresholds, pass rule).
+3. Decide the converter rule for each non-EDL signal before any test run.
+4. Verify library APIs and versions (`pytorch-ood`, MAPIE v1, crepes, TorchCP).
+5. Open from before: choosing trust t or alpha per environment; testing independence between viewers; SL Step 8; SL prior-weight convention (K vs 2); database novelty sweep.
+6. Carry forward all open items from earlier sections.
+
