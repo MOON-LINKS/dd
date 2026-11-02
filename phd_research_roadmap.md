@@ -3608,3 +3608,149 @@ A fuzzy 0.6 is not a probability, so it cannot be fed into Bayes' rule directly.
 3. Open from before: how a non-EDL viewer's output becomes a mass function or evidence counts (fuzzy is now one candidate converter, untested); choosing trust t or alpha per environment; testing independence between viewers; SL Step 8 (applying SL to the IoT pipeline); SL prior-weight convention (K vs 2).
 4. Run the database novelty sweep before claiming novelty for the multi-method belief comparison (Section 30), and add a fuzzy + intrusion detection query to it.
 5. Carry forward all open items from earlier sections.
+
+
+---
+
+## UPDATE — 2 November 2026 (new sections only; everything above is unchanged)
+
+Today: a recap of all belief methods with one small example each (Section 35), a check of what is left after fuzzy (Section 36), and how Fezzani combined fuzzy sets with Dempster-Shafer, with why it does not fit the IoT case (Sections 37 to 42). Sections 27 to 34 (29 and 30 October) stay as they are.
+
+### 35. Recap of the belief methods, one small example each
+
+**Corrections to my own recap (checked with Claude):**
+1. The groups of states in DS are called **focal elements** (sets), not "ensembles".
+2. Mass on {A,B} is **not** confusion. It is real evidence that narrows things down to the group. Only mass on **Omega** (the whole set) means "I don't know".
+3. Keep two ideas apart: **ignorance** = mass on Omega, **conflict** = K, the mass on empty overlaps between viewers. Yager turns conflict into ignorance, but they start as different things.
+4. The paradox is spelled **Zadeh**. It happens because Dempster divides by 1 − K, so when K is close to 1 it blows up what is left.
+5. Subjective logic with K states is (b1, ..., bK, u), summing to 1. It also has a base rate, fusion and trust, and its formulas are the same as EDL's.
+6. Fuzzy is not the next level of the same chain. It solves a different problem: vague words.
+
+| Method | Small example |
+|---|---|
+| Bayesian | Prior normal 0.9, DDoS 0.1. Chance of a spike: normal 0.05, DDoS 0.9. Multiply: 0.045 and 0.09, sum 0.135, so normal 0.33, DDoS 0.67. Weakness: (1/3, 1/3, 1/3) can mean "no idea" or "real even split" |
+| DS combination | Viewer 1: {D,S} 0.6, Omega 0.4. Viewer 2: {D} 0.5, Omega 0.5. Grid (overlap, product): {D} 0.30 + 0.20 = 0.50, {D,S} 0.30, Omega 0.20. K = 0, ignorance fell to 0.20 |
+| Dempster vs Yager (clash) | Viewer 1: {N} 0.6, Omega 0.4. Viewer 2: {D} 0.5, Omega 0.5. K = 0.30. Dempster (divide by 0.7): N 0.43, D 0.29, Omega 0.29. Yager (K to Omega): N 0.30, D 0.20, Omega 0.50. Zadeh: K = 0.9999 gives Dempster tumor = 1.0 vs Yager Omega = 0.9999 |
+| EDL | K = 3, S = sum of evidence + K, b = e/S, u = K/S. [0,30,2]: S = 35, b = (0, 0.857, 0.057), u = 0.086 (confident). [0,0,0]: u = 1 (unknown). [30,30,30]: S = 93, b = 0.32 each, u = 0.03 (conflict) |
+| Subjective logic | Yes/no: 4 happy, 1 unhappy gives b = 4/7, d = 1/7, u = 2/7. K = 3 with counts 6, 3, 1: S = 13, b = (6/13, 3/13, 1/13), u = 3/13. Base rate: P_k = b_k + a_k u. Fusion: different events = add counts, same events = average. Trust t: multiply b by t, rest goes to u |
+| Fuzzy | Rate 700 packets/s with "high" a ramp from 200 to 1,000 gives mu_high = 500/800 = 0.625. 20 new peers (other devices contacted) with "many" a ramp from 5 to 25 gives mu_many = 0.75. AND = min, OR = max, NOT = 1 - mu |
+
+**One-line memory aid:** Bayesian = probability per state, no "don't know". DS = mass on groups, Omega for ignorance, K for conflict. Yager = conflict goes to Omega. EDL = a network outputs evidence, giving (b, u). SL = the same (b, u) from counts, plus base rate, fusion, trust. Fuzzy = partial truth for vague words (not uncertainty or conflict).
+
+### 36. Is any belief algorithm left after fuzzy?
+
+- **No required one.** The list from Section 8 (Bayesian 1a/1b, DS with Dempster and Yager, subjective logic, EDL, fuzzy) is fully studied.
+- **Still to do (not new theories):** cheap baselines (softmax max-probability, energy, Mahalanobis, ensembles, MC dropout) as short overviews; conformal prediction step by step.
+- **Optional, only if a reviewer asks:** possibility theory (close cousin of fuzzy, one paragraph), other DS combination rules (Murphy, Dubois-Prade, PCR), credal sets / transferable belief model, Prior Networks, HMM and particle filters (the POMDP already covers the sequential role).
+- **Caveat:** "closed" refers to my list and snippet-level searches. The database sweep is still pending.
+
+### 37. Fezzani: how fuzzy sets were integrated with DS
+
+**Source and caution:** read from the English guide to the thesis (R. Fezzani, UBO / ENSTA Bretagne, defended 8 Dec 2015; Chapter 4 detailed, other chapters summarized, equation numbers match the French original). This is a guide, not the thesis text itself. Algorithm source: EVEREG (called EVREG in some Denoeux papers), Petit-Renaud and Denoeux (2004), originally a regression method.
+
+**Problem:** two sonars measure seabed depth. The MBES is precise but narrow, the ISSS is wide but noisy. Goal: one fused depth at each grid point plus a quality map. This is a **regression** problem (the unknown is a continuous number), which is why fuzzy sets appear.
+
+**The one idea:** a focal element can be a **fuzzy set** (here a fuzzy number) instead of a crisp set. Each value is inside the set to a degree mu in [0, 1], not just in or out.
+
+**Step 1 — each sounding becomes a mass function (eq. 4.18 and 4.19).** A sounding has position y_i, depth z_i, precision sigma_i (from the Ifremer quality factor) and reliability p_i. It becomes: mass p_i on a fuzzy number F_i, mass 1 - p_i on Z (the whole depth range, "may be meaningless"). The fuzzy number is a bell: F(u) = exp(-0.5 ((u - z)/sigma)^2).
+- Example z = 20, sigma = 0.1: F(20.0) = 1, F(20.1) = 0.61, F(20.2) = 0.14.
+- Here fuzzy describes how precise a measurement is, not a vague word like "high".
+
+**Step 2 — discount by distance (eq. 4.20, 4.31).** phi(d) = 0.99 exp(-d^2 / theta^2), theta = 1 in the thesis. A sounding 0.5 away: phi = 0.99 x 0.78 = 0.77, so 0.77 stays on F_i and 0.23 moves to Z. Far soundings end up with almost all mass on Z (ignorance) and stop influencing the result.
+
+**Step 3 — combine the k = 5 nearest soundings of each sensor (eq. 4.22).** Conjunctive rule: fuzzy intersection = pointwise minimum, masses multiply. The **height** of an overlap, the maximum of the minimum, measures how much two fuzzy sets really overlap. In crisp DS an empty intersection is full conflict; in fuzzy DS it is partial.
+
+**Step 4 — combine the two sensors with Dempster's rule, then Yager's smooth normalization (eq. 4.24).**
+- Important: this "Yager" is **not** the conflict-to-Omega rule from Section 24. It only fixes **sub-normal** fuzzy sets (height below 1): rescale each focal element to height 1, weight each mass by m(A) x h(A), renormalize. Weaker agreement loses weight.
+
+**Step 5 — decide (eq. 4.23, 4.25, 4.26).** Pignistic density: each fuzzy set shares its mass over values in proportion to membership, BetP(z) = sum over A of m*(A) x A(z) / |A|, with |A| = sum of memberships. Point estimate = mass-weighted center of gravity. Mass left on Z goes to the mid-range depth, so ignorance pulls the estimate toward the middle.
+
+**Step 6 — quality measures (eq. 4.15 to 4.17).** Non-specificity N (high when mass is on wide sets or on Z), strife S (high when sources conflict), total uncertainty N + S. These map directly onto the two readouts used in this thesis: **ignorance (m(Omega))** and **conflict (K)**. In the thesis, where no data exists mass stays on Z so N is high; where soundings disagree (sand ripples) strife is high.
+
+**Parameters used:** grid step 20 cm, k = 5, theta = 1, alpha = 0.99, p_i = 1 for both sensors.
+
+**Worked example (my own computation using the thesis formulas, not from the thesis):** A = Gauss(20, 0.1), B = Gauss(19.4, 0.1), each discounted to 0.77 on the fuzzy set and 0.23 on Z.
+- Grid: A and B overlap 0.594, A alone 0.177, B alone 0.177, Z 0.052.
+- The two bells cross at 19.7 with height exp(-4.5) = 0.011, so the overlap is almost conflict.
+- Smooth normalization (mass x height, renormalized): A 0.429, B 0.429, Z 0.127, overlap 0.016.
+- Crisp Dempster (overlap treated as empty, K = 0.594, divide by 0.406): A 0.436, B 0.436, Z 0.129. Close, because the overlap is tiny; with large overlaps the fuzzy version keeps much more of the agreement.
+- Point estimate about 19.8 (frame [18, 23], ignorance mass pulls toward mid-range 20.5).
+
+**Thesis results (from the guide):** on simulated data, residual against truth shrank from [-0.96, 1.12] m (raw) to [-0.34, 0.43] m (fused, then CHARM cleaning); the fused map filled the ISSS shadows and nadir gap; non-specificity flagged missing data; strife was high over sand ripples. Real data: one survey, DAURADE AUV, Bay of Douarnenez.
+
+**Caveats found in the guide:**
+1. p_i = 1 for both sensors, so the reliability mechanism existed in the model but was effectively switched off in the results.
+2. One global theta and k = 5, because leave-one-out tuning was too slow.
+3. The author names computation time as the main drawback (matters for edge devices).
+4. Results are seabed bathymetry, so they say nothing about attack detection.
+
+### 38. What changes when fuzzy is added to DS (crisp vs fuzzy)
+
+| | Crisp DS | Fuzzy DS |
+|---|---|---|
+| Focal element | {A,B} = 0.30: A in, B in, C out | (A 1, B 0.5, C 0) = 0.30: "mostly A, somewhat B" |
+| Intersection | exact set, possibly empty | pointwise minimum, with a height between 0 and 1 |
+| Conflict | all or nothing | partial: depends on the overlap height |
+
+**Example:** viewer 1 (A 1, B 0.5, C 0) mass 0.6; viewer 2 (A 0, B 0.5, C 1) mass 0.5. Fuzzy intersection = (0, 0.5, 0), height 0.5. Grid: overlap 0.30, viewer 1 set 0.30, viewer 2 set 0.20, Omega 0.20. Smooth normalization weights the overlap by 0.5 (0.15); total 0.85.
+
+| Result | Fuzzy | Crisp {A} vs {C} | Crisp {A,B} vs {B,C} |
+|---|---|---|---|
+| mass on {B} (agreement) | 0.18 | 0 | 0.30 |
+| viewer 1's set | 0.35 | 0.43 | 0.30 |
+| viewer 2's set | 0.24 | 0.29 | 0.20 |
+| Omega | 0.24 | 0.29 | 0.20 |
+
+Fuzzy lands between the two crisp choices: it keeps partial agreement instead of discarding it or fully trusting it. (Illustration of the idea, not the thesis's exact computation.)
+
+**The bigger reason it was needed:** his frame is a continuous depth. With crisp sets you must pick hard edges ("between 19.9 and 20.1"), so 20.11 is totally outside and tiny changes flip results. A bell says "the further from 20, the less it fits".
+
+### 39. The "50/50 split" and the fuzzy pignistic
+
+- DS itself never says {A,B} is 50/50. The equal split comes from the **pignistic transform**, applied only at the decision step.
+- Fezzani uses the same transform with membership degrees as weights (eq. 4.23): each state gets mass in proportion to its membership. For the depth estimate he uses the center of gravity (eq. 4.26), a membership-weighted average.
+- Crisp DS is the special case where every membership is 0 or 1, so the weights are equal and you get 50/50.
+- Example: (A 1, B 0.5) with mass 0.30: crisp {A,B} gives A 0.15, B 0.15; fuzzy gives A 0.30 x 1/1.5 = 0.20 and B 0.30 x 0.5/1.5 = 0.10.
+- Reference answer for the check (not answered by me in the session): (D 0.8, S 0.4, N 0) with mass 0.5, total membership 1.2: D = 0.5 x 0.8 / 1.2 = 0.333, S = 0.5 x 0.4 / 1.2 = 0.167 (sum 0.5).
+- The fuzzy split is not extra knowledge. The viewer must supply the degrees (for example from the bell width sigma); wrong degrees give a wrong split.
+
+### 40. Why fuzzy focal elements do not fit this IoT work
+
+| Reason | Detail |
+|---|---|
+| Categories, not a number line | His unknown is a depth, where 20.1 m is close to 20.0 m. Normal, DDoS and scan have no natural axis, so a bell around "what?" has no meaning |
+| Degrees would be invented | In the thesis degrees come from physics (quality factor gives a real sigma). My viewers produce (b, u) or a residual with no calibrated spread, so the degrees would be hand-made guesses |
+| Crisp DS already covers it | "Mostly D, somewhat S" = m({D}) 0.15 + m({D,S}) 0.15, giving D 0.225 and S 0.075 vs fuzzy 0.20 and 0.10. Little gain for a short list of states |
+| Task and cost | His method is spatial regression with neighbor discounting; mine is detection over time with a decision. He names compute time as the main drawback; the agent must run on hub-class hardware |
+
+**Where a fuzzy number could fit (idea only, untested):** a viewer that estimates a continuous quantity with a spread, for example the arrival rate behind the MMPP ("about 700 packets/s, plus or minus 50"). That is a different layer from the state belief.
+
+**Verdict:** know the idea, use fuzzy at most as a converter (membership degree to crisp mass, "Way A"), and cite Fezzani and the Petit-Renaud and Denoeux EVEREG work as related work ("Way B", fuzzy focal elements).
+
+**Sentence for a reviewer:** "Fezzani's EVEREG combines fuzzy sets with DS by allowing fuzzy focal elements for a continuous depth. Our frame is categorical, so we use ordinary crisp masses, and at most fuzzy memberships as a converter."
+
+### 41. Literature found on fuzzy + DS (snippet level, verify before citing)
+
+| Work | What it contributes |
+|---|---|
+| Petit-Renaud and Denoeux (2004), Int. J. Approximate Reasoning 35(1) | EVEREG: output is a fuzzy belief assignment; neighbors are discounted by distance and pooled with Dempster's rule |
+| Petit-Renaud and Denoeux (1999), ECSQARU | Fuzzy belief structure approach to regression |
+| Yen (1990), IEEE Trans. SMC | Generalizes DS to fuzzy sets by decomposing fuzzy focal elements into non-fuzzy components and generalizing Dempster's rule |
+| Denoeux, belief functions induced by random fuzzy sets (arXiv 2004.11638) and epistemic random fuzzy sets (arXiv 2202.08081) | A possibility distribution models certain but fuzzy evidence; a DS mass function models uncertain crisp evidence. Dempster's rule does not preserve possibility structure, so a generalized product-intersection rule covers both |
+| Xu, Wen and Li (2009), J. Electron. (China) 26 | Constructing non-consonant fuzzy focal elements via random sets |
+
+### 42. Reference answers for pending checks (not yet answered by me in the session)
+
+- Gaussian fuzzy number z = 20, sigma = 0.2: F(20.2) = exp(-0.5) = 0.607; F(20.4) = exp(-2) = 0.135.
+- Distance discount with Delta = 1, theta = 1: phi = 0.99 x exp(-1) = 0.364.
+- Fuzzy checks from 30 October: AND(mu_high, mu_few) = min(0.625, 0.25) = 0.25; NOT(mu_many) = 1 - 0.75 = 0.25 (equals mu_few).
+- Check still open for me: name one thing in my pipeline that is a continuous number with a spread (where a fuzzy number could fit) and one that is a category (where it could not).
+
+### 43. Next steps
+
+1. Fuzzy is closed. Start the **cheap baselines** (softmax max-probability, energy, Mahalanobis, ensembles, MC dropout) as short overviews.
+2. Then **conformal prediction**, step by step.
+3. Open from before: how a non-EDL viewer's output becomes a mass function or evidence counts (fuzzy membership is one candidate converter, untested); choosing trust t or alpha per environment; testing independence between viewers; SL Step 8 (applying SL to the IoT pipeline); SL prior-weight convention (K vs 2).
+4. Run the database novelty sweep (Section 31, plus a fuzzy + intrusion detection query) before claiming novelty for the multi-method belief comparison.
+5. Read Fezzani's thesis itself (French original) to confirm the details taken from the English guide before citing any equation.
+6. Carry forward all open items from earlier sections.
