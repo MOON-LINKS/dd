@@ -3972,3 +3972,109 @@ If Mahalanobis scores well inside DS only because of how distance was mapped to 
 5. Open from before: choosing trust t or alpha per environment; testing independence between viewers; SL Step 8; SL prior-weight convention (K vs 2); database novelty sweep.
 6. Carry forward all open items from earlier sections.
 
+
+**Worked example (illustrative numbers):** states N, D, S. MMPP viewer: {N} 0.1, {D,S} 0.5, Omega 0.4. GRU viewer: {D,S} 0.6, Omega 0.4. Grid: {N}x{D,S} = empty 0.06; {N}xOmega = {N} 0.04; {D,S}x{D,S} = {D,S} 0.30; {D,S}xOmega = {D,S} 0.20; Omega x{D,S} = {D,S} 0.24; OmegaxOmega = Omega 0.16. K = 0.06.
+- Dempster (divide by 0.94): {N} 0.04, {D,S} 0.79, Omega 0.17.
+- Yager (K to Omega): {N} 0.04, {D,S} 0.74, Omega 0.22.
+- Reading: attack-like, cannot tell DDoS from scan, a little unknown. The policy can learn "throttle, not isolate".
+
+**Conversion of each viewer's output into a mass function (open design item; suggestions to test):**
+
+| Viewer | Raw output | Candidate conversion |
+|---|---|---|
+| MMPP | likelihood under a model | One MMPP per known class gives one likelihood per class, normalized into masses on single states; if the window is unlikely under all of them, the leftover goes to Omega |
+| GRU | prediction residual | Compare the residual with its distribution on normal validation data: low percentile = mass on {N}, very high = mass on {not normal}, in between = Omega |
+| EDL head | evidence | Direct: (b, u) is already a mass function |
+| Mahalanobis, ensemble spread | a score | Same percentile approach |
+
+**Cautions:**
+1. **Independence:** Dempster's rule assumes independent evidence; GRU and MMPP are correlated, so Dempster may become overconfident. Measure the correlation between viewers; compare Dempster, Yager and plain averaging.
+2. **Circularity:** if the simulator generates traffic from an MMPP and the MMPP viewer is fitted to that same process, the viewer looks perfect for the wrong reason. Fit viewers on real CICIoT2023 normal and known traffic; test on real held-out attacks.
+3. **One viewer means nothing to fuse.** A single mass function still gives Omega, but fusion needs at least two.
+
+**Design choices to record:** viewers are trained first and **frozen** while PPO trains (otherwise the policy chases a moving input); the temporal rule from Section 45 item 4.
+
+### 48. DS and EDL: how they work together
+
+- **Different jobs (see Section 27):** EDL is a viewer (it produces evidence, then (b, u)); DS is the fusion rule (it combines mass functions). EDL's (b, u) is already a mass function on single states plus Omega, so EDL can feed DS. It is not either/or.
+- **Why examples used groups like {D,S}:** EDL alone cannot put mass on groups; other viewers, after conversion, can. The DS grid handles both.
+- **Example (EDL as a viewer):** EDL gives {N} 0.2, {D} 0.6, Omega 0.2. Another viewer gives {D,S} 0.5, Omega 0.5. Grid: {N}x{D,S} = empty 0.10; {N}xOmega = {N} 0.10; {D}x{D,S} = {D} 0.30; {D}xOmega = {D} 0.30; Omega x{D,S} = {D,S} 0.10; OmegaxOmega = Omega 0.10. K = 0.10. Dempster (divide by 0.9): {N} 0.11, {D} 0.67, {D,S} 0.11, Omega 0.11. Yager: {N} 0.10, {D} 0.60, {D,S} 0.10, Omega 0.20.
+- **Correction to earlier framing:** "DS vs Bayesian vs EDL" treated them as rivals, but they sit at different layers. Cleaner setup: (a) same viewers with different fusion rules (Dempster, Yager, Bayesian with an unknown state, probability averaging); (b) EDL standalone; (c) hybrid arm with EDL as one viewer inside DS.
+- **Caution:** an EDL head trained on the same data as the GRU is not independent evidence.
+
+### 49. MBRL cost caution and the RL vs MBRL cost/performance/accuracy experiment (E2)
+
+**What the caution means:** MBRL first learns a world model (the GRU), then trains the policy partly on imagined traffic. The benefit is fewer real interactions, which only matters when real interactions are expensive. A cheap simulator (the MMPP) produces traffic almost for free, so MBRL then only adds cost: world-model training, extra compute, and the risk of learning from a wrong model.
+
+**Where MBRL could still pay off:** (1) a real home with little data (a few days of traffic); (2) federated training, where fewer steps may mean fewer communication rounds (Candidate 1); (3) the GRU residual as the "something is unusual" signal (the stronger argument).
+
+**Crucial ablation:** train the GRU as a separate predictor, feed its prediction error into model-free PPO, and never train the policy on imagined rollouts. If that matches MBRL, the benefit came from the GRU feature, not from MBRL.
+
+**Circularity trap:** if the GRU learns from MMPP-generated traffic and is evaluated on the same simulator, the test is circular (same issue as RAIDEN). Report final numbers on real held-out CICIoT2023 data.
+
+**Arms:**
+
+| Arm | What it is |
+|---|---|
+| A | Model-free PPO on window features |
+| B | Recurrent PPO (GRU inside the policy, no explicit belief) |
+| C | Model-free PPO plus the separately trained GRU residual as an input |
+| D | MBRL: policy trained on imagined rollouts from the GRU/MMPP world model (mixed with real) |
+| E | DQN baseline |
+
+Each arm is also run with and without the DS belief as input, so belief and MBRL effects can be separated.
+
+**Two data regimes:** (1) unlimited simulator (shows the cost MBRL adds when real data is free); (2) limited real data, N real windows mimicking a new home (where MBRL has a chance).
+
+**Measures:**
+
+| Axis | Metrics |
+|---|---|
+| Cost | Real environment steps to reach a target return, training wall-clock (including world-model training), memory, inference time per decision on Raspberry Pi-class hardware, later bytes per federated round |
+| Performance | Return, time to contain, false-isolation rate, missed attacks |
+| Accuracy | Detection AUROC on held-out attacks, per-class accuracy on known attacks, calibration |
+| Robustness | A novel attack the world model never saw: do imagined rollouts mislead the policy? |
+
+**Fairness:** equal tuning budget, same information for every arm, many seeds with spread reported, separate tuning and evaluation seeds, grid-edge check, rules fixed before running.
+
+**Decision rules (suggestion, set numeric thresholds first):**
+- C matches D: the gain is the GRU feature; use model-free RL plus a predictor and say so.
+- D reaches the target with far fewer real steps and total compute stays reasonable: MBRL pays, in the limited-data regime.
+- A or B matches everything: use normal RL; MBRL becomes a documented negative result.
+
+### 50. Roadmap (durations are estimates; adjust to available hours)
+
+| Phase | When | Tasks | Done when |
+|---|---|---|---|
+| 0. Before the meeting | This week | One page on exactly what the CICIoT2023 DS run did, plus the missing numbers from Section 44. Rough 2-page POMDP definition. List of decisions for the supervisor. Skim Hammar and Stadler, Q-BIRD, FedAtten-DRL (abstract and method only) | The result can be defended in 2 minutes |
+| 1. Foundations | Weeks 2 to 4 | PPO/DQN/variants mini-review (2-page table). Calibrate MMPP; build a Gym-style environment and a replay harness. Freeze: observation layout by protocol segment with presence masks, action set, reward v1, zero-day protocol (leave-one-family-out, temporal, cross-dataset), metrics and pass/fail rules. Choose the DS temporal rule and the viewer conversion rules. Repo, configs, seeds, logging. Start the database novelty sweep | A design document; a random policy runs end to end |
+| 2. Paper 1 experiments | Weeks 5 to 10 | Cheap kill tests first: world model (MMPP vs GRU vs both), belief input vs recurrent hidden state vs both, the belief comparison (Section 46). Then E2 (Section 49) | A table answering: does belief help, does MBRL pay, which world model |
+| 3. Write Paper 1 | Weeks 11 to 16 | Paper plus the related-work table and threat model (reused later) | Submitted |
+| 4. Paper 2 (federated) | Months 5 to 8 | Flower, Edge-IIoTset, IID vs non-IID splits, centralized baseline, FedAvg vs FedProx, FRL-IPS stabilization unit, global vs local fine-tuning, shadow-mode gate as a small ablation | Cost of federation measured |
+| 5. Paper 3 (cross-protocol) | Months 9 to 14 | Pivot benchmark, measured timings, baselines (single factored agent, IoTHaven-style, attack graph); MARL only if separation is physical | Crossover map |
+| Extensions | Only if time | XAI, twin, Byzantine fusion, conformal, home testbed | |
+
+If the DS advantage disappears under the fair test, the belief comparison becomes an honest ablation, and the contribution rests on the agent and the explicit unknown state.
+
+### 51. Easy-to-miss parts (check before starting)
+
+- Environment, action set and reward design (the largest hidden piece).
+- Observation layout fixed by protocol segment now, so Papers 2 and 3 do not force a redo.
+- Held-out evaluation on real data, not only the simulator.
+- The DS temporal update rule and the viewer-to-mass conversion rules.
+- Independence between viewers (measure it).
+- Compute cost on real hub-class hardware.
+- A database novelty sweep before any "first" claim.
+- Federated-ready code from the start (weights that serialize cleanly).
+- Experiment logging, seeds, and a pre-registered pass/fail rule per comparison.
+- Starting the writing early (related-work table and threat model are reused).
+
+### 52. Open questions and next steps
+
+1. Which viewers and rule (Dempster or Yager) did the CICIoT2023 DS run use, and how was "believing new attacks" measured?
+2. Weekly hours, proposal or defense deadline, GPU access, library access (IEEE Xplore, ACM, Scopus)?
+3. Is the belief comparison part of Paper 1 or a separate short paper?
+4. Decide: DS temporal rule; viewer conversion rules; action set; reward v1; which PPO variants to include.
+5. Reference answers for pending checks (not answered by the user in the session): (a) energy vs softmax: softmax only sees the ratio of the logits, energy also sees their size, so (10, 10, 10) has softmax max 0.33 like (1, 1, 1) but energy -11.1 vs -2.1. (b) MMPP viewer circularity: if the simulator generates traffic from the same MMPP, the viewer fits perfectly because it learned the generator itself, whereas real CICIoT2023 traffic is not exactly MMPP, so the fit is worse and more honest. (c) Continuous number with a spread: arrival rate, GRU residual; category: the attack state.
+6. Paused (resume later): cheap baselines (softmax, energy, Mahalanobis, ensembles, MC dropout) and conformal prediction step by step (Section 28 and 29 material).
+7. Carry forward all open items from earlier sections.
