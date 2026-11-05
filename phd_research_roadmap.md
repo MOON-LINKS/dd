@@ -4196,3 +4196,197 @@ Pignistic on Dempster: D about 0.67, S about 0.15, N about 0.17.
 2. Open design items: viewer-to-mass conversion rules (Section 47); DS temporal rule (Section 45 item 4); which viewers and rule the CICIoT2023 DS run used (Section 44); independence between viewers (measure it).
 3. Test the hybrid arm "EDL as one viewer inside DS" against probability averaging and against the percentile converter without fuzzy.
 4. Carry forward all open items from earlier sections.
+
+---
+
+## UPDATE — 5 November 2026 (continued; new sections only; everything above is unchanged)
+
+This continues the earlier 5 November update (Sections 53 to 57). Today's second part: the study plan for what comes after the belief, then Session 0, which closes the belief loose ends (frame, conversion recipes, offline test, temporal rule). Items marked (suggestion) are mine, not decisions. Items marked (verify) have not been checked against sources.
+
+### 58. Study plan after the belief (recommended order)
+
+**Why this order:** the belief has no consumer yet. The agent decides what the belief must contain (its size, what feeds it, how often it updates), so coding the belief first and learning RL later may force a rebuild. The belief gets one short closing session, then the topics follow the data flow: belief, policy, learning algorithm, world model, evaluation.
+
+| # | Topic | Why now | What it unblocks in code | Depth |
+|---|---|---|---|---|
+| 0 | Belief loose ends: (a) viewer-to-mass conversion rules, (b) the temporal rule (reset each window, or discount the old belief and fuse it as one more source) | Last open belief decisions | The belief module can be coded and frozen | STUDY (1 session; done, see Sections 59 to 66) |
+| 1 | POMDP agent loop and problem definition: observation, action set, reward, episode, what a "step" is; a toy 3-state example on paper | The roadmap's biggest hidden piece; nothing can be coded without it | Environment interface, action list, reward v1 | STUDY (next) |
+| 2 | RL basics up to PPO: value, advantage, policy gradient, PPO clipping and why it is stable, small numeric examples | PPO is the chosen algorithm | The training loop | STUDY |
+| 3 | PPO vs DQN, on-policy vs off-policy: where each is stable, where each is sample-efficient | The "small literature" item; DQN is a baseline arm | Which arms to build and how to compare them | KNOW |
+| 4 | Belief inside PPO: feed-forward vs recurrent PPO vs belief-based PPO (BF-PPO, Hammar and Stadler; verify details) | Connects the belief to the policy | The policy input layout | STUDY |
+| 5 | World models and MBRL basics: learn a model, train on imagined rollouts (Dyna idea), how the GRU and MMPP fit | Needed for the RL vs MBRL cost experiment (E2) | The MBRL arm and the "GRU feature only" ablation | STUDY |
+| 6 | Reward and cost design, plus experiment design: graded actions, false isolation, seeds, confidence intervals, pre-registered rules | The fair-comparison protocol keeps coming up | The evaluation harness | STUDY |
+| later | Federated (FedAvg, FedProx, Flower), MARL/CTDE (MAPPO), XAI, twin, conformal prediction and cheap baselines | Not needed until Papers 2 and 3 or the extended belief arms | Nothing in Paper 1 | Postpone |
+
+- **Postponed on purpose:** MAPPO and CTDE (Paper 3; learning them early blurs the single-agent picture), federated learning (study right before Paper 2), conformal prediction and cheap baselines (quick to learn when the extended belief arms are built).
+- **Alternatives:** fastest path to a running agent = do 0, 1, 2 and 4, then code, and study 3, 5 and 6 while the first experiments run. Safest path = do all of 0 to 6 first. Suggested: safe for 0 and 1, fast for the rest.
+- **One non-study item that affects coding:** fix the observation layout by protocol segment with presence masks during session 1; it also shapes the belief vector.
+- **Not re-verified:** PPO, DQN, BF-PPO and MBRL claims; each session should include a short check of the key papers.
+- **Open question for session 2's depth:** how much RL is already known (did RAIDEN use DQN; has a policy been trained before)?
+
+### 59. Session 0, Step 1: the conversion problem and the frame
+
+**Problem (plain):** the DS grid needs masses, but a viewer gives a number (like a smoke detector reading 0.7). The conversion rule decides what mass that number becomes. A good rule: masses are non-negative and sum to 1; a stronger signal puts more mass on a specific claim; a weak or unreliable signal leaves its mass on Omega.
+
+**First decision: the frame (the list of states).**
+
+| Option | States | Where "unknown attack" lives |
+|---|---|---|
+| F1 | {N, D, S} | Only as high Omega or high conflict K |
+| F2 | {N, D, S, U} | U = "an attack from a family never seen" |
+
+**Why F2 is more logical (plain):** a doctor who knows flu, cold, allergy meets a new disease. The F1 doctor must write "something wrong, fits no known pattern" as "flu or cold", which is a false claim. The F2 doctor writes it as "something wrong, could be known or something else". F1 forces every window to be one of the listed states; a 0-day is not.
+
+**Omega is not U:**
+
+| | Meaning | Action it suggests |
+|---|---|---|
+| Omega | "I have no evidence about anything", total ignorance (can include normal) | gather more data |
+| U | "Something is wrong, and it is not any family I know" | be careful, contain |
+
+In F1, "abnormal but unmatched" has nowhere to go except {D,S} (a false claim) or Omega (mixed with ignorance).
+
+**Pignistic example (N 0.1, abnormal 0.7, Omega 0.2; group mass shared equally):**
+
+| | F1: abnormal = {D,S} | F2: abnormal = {D,S,U} |
+|---|---|---|
+| N | 0.167 | 0.150 |
+| D | 0.417 | 0.283 |
+| S | 0.417 | 0.283 |
+| U | n/a | 0.283 |
+| Mass on known attacks | 83% | 57% |
+
+F2 value for D: 0.7 / 3 = 0.233 (three states share the group) plus Omega's share 0.2 / 4 = 0.05, total 0.283. In F1: 0.7 / 2 = 0.35 plus 0.2 / 3 = 0.067, total 0.417.
+
+**Caveats:** U gets no direct evidence from a score viewer; it gains mass only through sets that contain it (but see recipe A below, which can point at U directly). F1 can partly imitate F2 by reading unknown from Omega and K, so give F1 the same readouts in the test. F2 can cost accuracy on known attacks. The equal split of U is an assumption, like the 50/50 split earlier.
+
+**Status:** F2 is the working choice (more logical), F1 is kept as a comparison arm, and an offline test decides (Section 63).
+
+### 60. Session 0, Step 2: conversion recipes per viewer type (suggestions to test)
+
+**Weights (trust) for viewers:** each viewer gets one number between 0 and 1 (its trust, equal to the reliability rho used in the recipes; use one number per viewer, do not apply it twice). At 1.0 its claim passes fully; at 0.5 half passes and the other half becomes "I don't know". A weight above 1 would create belief from nothing, so a more important viewer is not boosted above 1; less reliable viewers are turned down. Set the weights from validation reliability (accuracy and calibration), on known traffic only, never on the held-out attack. Other datasets are pure tests of whether a weight transfers (feature alignment across datasets is real work; BRIDGE builds a shared 46-feature vocabulary, see Section 29).
+
+**Recipe 1: score viewer (GRU residual, Mahalanobis, ensemble spread; higher = more unusual).**
+1. On real normal validation windows take two percentiles p_low (for example 90th) and p_high (for example 99th).
+2. a = clip((s - p_low) / (p_high - p_low), 0, 1).
+3. Choose reliability rho.
+4. m({abnormal}) = rho x a, m({N}) = rho x (1 - a), Omega = 1 - rho, with "abnormal" = {D,S,U} in F2.
+
+Example (p_low 1.5, p_high 3.0, rho 0.8): s = 1.0 gives N 0.80, abnormal 0, Omega 0.20; s = 2.4 gives a = 0.6, N 0.32, {D,S,U} 0.48, Omega 0.20; s = 5.0 gives a = 1, N 0, {D,S,U} 0.80, Omega 0.20. Check example: p_low 2.0, p_high 4.0, rho 0.9, s = 3.0: a = 0.5, m({N}) = 0.45, m({D,S,U}) = 0.45, Omega = 0.10 (sum 1).
+Cautions: take the percentiles from real normal traffic (not simulator output, or circular); p_low, p_high and rho are hyperparameters tuned with equal budget per viewer; this ramp is the fuzzy ramp of Way A with percentile calibration.
+
+**Recipe 2: per-class likelihood viewer (the MMPP).** One model per known case (normal, DDoS, scan) says how typical the window is for its class, f_k in [0, 1], measured against validation windows. If every model says "never seen this", that is information: mass goes to U. (This corrects my earlier statement that no viewer can point at U.)
+- m(k) = rho x f_k / (sum f + c), m(U) = rho x c / (sum f + c), Omega = 1 - rho; c = how much fit counts as enough.
+- Example (c 0.1, rho 0.8): fits (0.60, 0.05, 0.02) give N 0.623, D 0.052, S 0.021, U 0.104, Omega 0.20. Fits (0.01, 0.02, 0.01) give N 0.057, D 0.114, S 0.057, U 0.571, Omega 0.20.
+- Check example: fits N 0.20, D 0.20, S 0.10, c 0.1, rho 0.8: denominator 0.6, m(N) = 0.267, m(D) = 0.267, m(S) = 0.133, m(U) = 0.133, Omega = 0.200 (sum 1.000).
+- Caution: "nothing fits" can also mean poor class models, so a normal window the MMPP models badly would be flagged as new. Fit the models and set c on real normal traffic.
+
+**Recipe 3: probability-output viewer (classifier with softmax).** A witness who always answers, even when clueless; the probabilities carry no information about how much it really knows. Add a confidence check: put the max probability on a ramp (validation percentiles) to get confidence c in [0, 1], then m(k) = rho x c x p_k, Omega = leftover. Example (ramp 0.4 to 0.9, rho 0.9): probabilities (0.50, 0.30, 0.20) give c = 0.2, masses 0.090, 0.054, 0.036, Omega 0.82; probabilities (0.95, 0.03, 0.02) give c = 1, masses 0.855, 0.027, 0.018, Omega 0.10. Caution: softmax can be confidently wrong on a new attack (an IoT study found confidence anti-correlated with zero-days, Section 29 paper 1); this viewer never points at U, it can only go quiet.
+
+**Recipe 4: EDL.** Already a mass function: (b, u) gives masses on single states and u on Omega. Variant arm to test (untested): send part of u to U instead (little evidence on a new attack may mean "something new").
+
+**0-day example for F2 (EDL viewer {N} 0.1, {D} 0.1, Omega 0.8; residual viewer s = 2.4 gives {N} 0.32, {D,S,U} 0.48, Omega 0.20):**
+Grid: {N}x{N} = {N} 0.032; {N}x{D,S,U} = empty 0.048; {N}xOmega = {N} 0.020; {D}x{N} = empty 0.032; {D}x{D,S,U} = {D} 0.048; {D}xOmega = {D} 0.020; Omega x{N} = {N} 0.256; Omega x{D,S,U} = {D,S,U} 0.384; OmegaxOmega = Omega 0.160. K = 0.08. Dempster (divide by 0.92): {N} 0.335, {D} 0.074, {D,S,U} 0.417, Omega 0.174. Yager adds 0.08 to Omega instead. Reading: most mass sits on "abnormal, family unclear"; no known family wins. Under F1 the same fusion would say "{D,S}: DDoS or scan", mislabeling a 0-day as a known family. U appears by exclusion.
+
+### 61. Roles of the components (MMPP, GRU, EDL, DS) and the world-model question
+
+| Component | Job 1: world model (predicts and generates traffic) | Job 2: viewer (a claim about a window) |
+|---|---|---|
+| MMPP | Yes (bursty arrival model; action effects must be added by hand, for example "throttle scales the rate down") | Yes (recipe 2) |
+| GRU | Yes (learned prediction of next traffic) | Yes (prediction error, recipe 1) |
+| EDL | No (it only labels a window; it cannot forecast) | Yes (recipe 4) |
+| DS | No | No: it is the fusion layer that combines viewers into the belief the agent acts on |
+
+- **Plain picture:** a world model is a simulator in the agent's head (give it the situation and an action, it predicts the next traffic), like a weather forecast. EDL is a doctor labelling today's symptoms, not a forecaster.
+- **Valid design (the user's):** GRU plus MMPP as the world model, and MMPP plus EDL (plus the GRU residual) as viewers. EDL is only a viewer, and DS is the main belief layer. "MMPP as world model, no GRU" is also valid and should be an arm (MMPP only, GRU only, both). What would be lost without the GRU: it cannot learn non-MMPP behavior, action effects are hand-written rather than learned, and the "prediction error as unusual signal" idea disappears.
+- **How MMPP and GRU combine as a world model (open; test as ablation):** side by side (MMPP generates the regime, GRU predicts finer details given the regime) or correction (MMPP gives the baseline, GRU learns what the MMPP gets wrong).
+- **Cautions:** (1) the same component plays two roles (generator and judge), so imagined traffic looks natural to it; evaluate on real held-out data and give attack traffic its own generator; (2) independence: MMPP and GRU read the same window and learn from the same normal traffic, so they are correlated; EDL is the most independent (it is trained with labels); (3) weights between 0 and 1 (Section 60).
+
+### 62. States vs labels, and why Step 3 is ML and not RL
+
+- **State** = the real situation in the network (normal, DDoS, scan, something new); the belief outputs masses over states. **Label** = the answer key in the dataset, used to grade the belief and to train label-trained viewers (EDL). Exam picture: the belief is the student, the label is the teacher's key.
+- **Labels to states:** CICIoT2023 has 33 attacks in 7 categories (per earlier notes). Group them into the states; that grouping is a design choice and must be written down.
+- **Where U comes from:** U has no label in training. Hide one attack family from training; at test time that family's windows are marked "should be U". U exists only in the answer key at test time.
+- **ML, not RL:** the offline test checks if the belief is right about a window; there are no actions, rewards or environment. Whether it makes the agent act better is a separate question for the simulation. The offline test is the cheap one that comes first.
+
+### 63. Session 0, Step 3: offline test of F1 vs F2 and of the conversions (plain ML)
+
+**Setup:** real CICIoT2023, the same train and validation splits, the same held-out families for every arm; a standard supervised classifier (for example the EDL network) and a residual viewer trained on normal traffic only. The only difference between F1 and F2 is the frame and how "abnormal" is written ({D,S} vs {D,S,U}). Give F1 the same readouts as F2 (m(Omega) + K) so a win for F2 cannot be explained by the readout alone. F2 also gets Pl(U) (suggestion).
+
+**Protocol:** (1) leave one attack family out of training; repeat for several different families (not just one); (2) fit percentiles, rho and other settings on the validation split of known classes only (one family can serve as a separate tuning family; the rest are used only for testing); (3) test on held-out attacks plus known and normal test traffic; (4) at least 5 seeds, report mean and spread.
+
+**Metrics:**
+
+| Question | Check |
+|---|---|
+| Does it catch the new attack? | AUROC of the novelty score (held-out family vs everything else) |
+| Does it wrongly cry "new"? | False-U rate on normal and known windows (false-alarm rate) at a fixed detection rate |
+| Is it still right on known attacks? | Accuracy or macro-F1 on known classes, using the pignistic result |
+| Do the numbers mean what they say? | Calibration: among windows with m(U) around 0.6, about how many are truly novel? |
+| Which part helped? | Each viewer alone vs fused |
+
+**Decision rule (set numeric thresholds first):** choose F2 only if novelty AUROC improves by at least a margin and known-class macro-F1 drops by no more than a small tolerance. If the difference is within noise, keep the simpler F1.
+
+**Worked metric example (200 test windows: 100 known, 100 from the hidden family):**
+- First case: 80 of 100 hidden flagged, 15 of 100 known flagged: detection 80%, false-alarm rate 15%, precision 80 / (80 + 15) = 84%.
+- Second case: 80 hidden flagged, 40 known flagged: detection 80%, false-alarm rate 40 / 100 = 40%, precision 80 / (80 + 40) = 66.7%. Same detection, far more false alarms. Check answer to the user's attempt: precision = correct detections (true positives, 80) divided by all detections (80 + 40); the 40 are the false positives, not the correct detections.
+- Compare methods at the same false-alarm rate, not at whatever threshold each uses. Precision depends on how common attacks are (the 50% new-attack mix flatters it); report detection rate and false-alarm rate, which do not depend on the mix.
+
+**Things that could go wrong:** F2 moves some mass away from D and S, which may lower known-class accuracy (the earlier DS run on CICIoT2023 showed the same trade-off: strongest on new attacks, second on known). If all viewers say "abnormal, family unclear" about everything unusual, F1 and F2 may look nearly identical. A hidden family may partly resemble a known one (a new flood that looks like DDoS), so the "should be U" key is fuzzy: repeat with several families and report each. A U can come from weak models, not from a truly new attack (the false-U rate and calibration catch this). There is no single accuracy to maximize; report the pair (novelty detection, known accuracy) and fix the pass/fail rule before running. The test shows which frame is a better belief frame, not whether the agent acts better; one confirmation inside the simulation is still needed.
+
+### 64. Session 0, Step 4: the temporal rule (what the belief carries to the next window)
+
+**Plain idea:** a doctor watching a patient through the night. A doctor who forgets each hourly result treats every test in isolation; one who remembers becomes more sure with each reading, but lets old results fade so a fever that drops at 5 a.m. is not kept alarming by the 2 a.m. result.
+
+| Option | What it does |
+|---|---|
+| Reset | Build the belief from the current window only |
+| Carry with fading | Multiply the old belief's masses by a keep factor k in [0, 1] (the rest moves to Omega, same as discounting), then fuse it with the new window as one more source |
+
+Name: use k for the keep factor to avoid confusion with RL's discount gamma. This is a belief-module design that can be tested now, without RL.
+
+**Example 1 (attack continues):** old {D} 0.5, Omega 0.5, k = 0.6, so faded old = {D} 0.3, Omega 0.7. New window {D} 0.4, Omega 0.6. Grid: {D}x{D} = {D} 0.12, {D}xOmega = {D} 0.18, Omega x{D} = {D} 0.28, OmegaxOmega = Omega 0.42, K = 0. Carry: {D} 0.58, Omega 0.42. Reset: {D} 0.40.
+
+**Example 2 (attack ends):** same faded old. New window {N} 0.6, Omega 0.4. Grid: {D}x{N} = empty 0.18, {D}xOmega = {D} 0.12, Omega x{N} = {N} 0.42, OmegaxOmega = Omega 0.28, K = 0.18. Dempster (divide by 0.82): {D} 0.146, {N} 0.512, Omega 0.341. Yager: {D} 0.12, {N} 0.42, Omega 0.46. The belief swings back to normal with a small trace of the old attack; a smaller k forgets faster.
+
+**Check (k = 0.5, old {D} 0.6, Omega 0.4, new {D} 0.3, Omega 0.7):** faded old: {D} = 0.5 x 0.6 = 0.3, Omega = 0.7. Grid: {D}x{D} 0.09, {D}xOmega 0.21, Omega x{D} 0.21, OmegaxOmega 0.49. Result: {D} = 0.09 + 0.21 + 0.21 = 0.51, Omega = 0.49, K = 0, so Dempster and Yager agree. Reset would give {D} 0.3; carrying memory raises it to 0.51. (The 0.5 in this check is the keep factor k, not the conflict K.)
+
+**Cautions:** sliding windows overlap; if consecutive windows share traffic, fusing them counts some evidence twice and makes the belief overconfident; check how windows are built. k must be tuned on known validation traffic, never on the held-out attack, with equal budget for every arm. It is not known whether CICIoT2023 windows are time-ordered per device; this is needed to test the temporal rule offline (check first).
+
+**Two kinds of memory in the agent:** memory in the belief (this carry-forward rule, decided now) and memory inside the policy (a recurrent network in PPO, part of the RL design). Arms for later: reset belief with a recurrent policy, carried belief with a feed-forward policy, both. PPO's own parameters (learning rate, clip range, epochs) come in the RL study sessions and are unrelated to the belief module.
+
+### 65. Dempster vs Yager when there is conflict (worked checks)
+
+**Plain idea:** K is the share of evidence that contradicts itself. Dempster throws the contradictory part out and scales the rest back to 100% (like removing disqualified ballots and recounting the valid ones). Yager does not throw it out: a contradiction means "we could not agree", so it counts as "I don't know" and goes to Omega. When K = 0 the two rules give the same answer (as in the check above, where both sources only mentioned {D} or Omega).
+
+**Order of steps for both rules:** (1) multiply cell by cell, the overlap decides where the mass goes; (2) add up all cells that share the same overlap (for {D} that includes {D}x{D}, {D}xOmega and Omega x{D}, not only {D} times {D}); (3) handle conflict: Dempster divides by 1 - K, Yager adds K to Omega.
+
+**Example (raw grid {D} 0.31, K = 0.20, Omega 0.49):** Dempster divides by 0.8: {D} 0.3875, Omega 0.6125 (sum 1). Yager: {D} 0.31, Omega 0.49 + 0.20 = 0.69 (sum 1). Without conflict the same case gave {D} 0.51, Omega 0.49. Dempster ends more sure of {D} (0.3875) than Yager (0.31); a mild version of the Zadeh effect (with K = 0.9 the gap would be large). Always report K with the result.
+
+**Reference answer for the pending check (raw grid {D} 0.30, {N} 0.20, empty 0.25, Omega 0.25; not answered by the user in the session):** K = 0.25. Dempster (divide by 0.75): {D} 0.400, {N} 0.267, Omega 0.333 (sum 1.000). Yager: {D} 0.30, {N} 0.20, Omega 0.25 + 0.25 = 0.50 (sum 1.00).
+
+### 66. Decisions and open items from Session 0
+
+**Decisions (working, pending tests):**
+1. Frame: F2 {N, D, S, U} is the working choice; F1 stays as a comparison arm; the offline test (Section 63) decides.
+2. Viewers: MMPP (recipe 2), GRU residual (recipe 1), EDL (recipe 4), optionally a softmax viewer (recipe 3); each with one trust weight in [0, 1], set on known validation traffic.
+3. World model arms: MMPP only, GRU only, both (Section 61).
+4. Temporal rule: test reset vs carry with fading (keep factor k) offline first.
+5. Fusion rules: Dempster and Yager both as arms; always report K and m(Omega).
+6. Step 3 and the F1 vs F2 comparison are plain ML on real CICIoT2023 (several hidden families), not RL.
+
+**Open items:**
+1. How the grouping from fine labels to states is defined (CICIoT2023 has 33 attacks in 7 categories).
+2. Which viewers and which rule did the earlier CICIoT2023 DS run use, and how was "believing new attacks" measured (carried from Section 44)?
+3. Are CICIoT2023 windows time-ordered per device (needed for the temporal-rule test)? How are windows built (overlap)?
+4. How to set each viewer's trust weight and whether it transfers to other datasets (BRIDGE-style feature alignment).
+5. The U-from-u variant of EDL (send part of u to U) is untested.
+6. Reference answers for pending checks not yet answered by the user: the Dempster vs Yager check in Section 65; the Step 3 quick check (answered above: false-alarm rate 40%, precision 66.7%).
+7. Hypothesis flags: all conversion recipes, the percentile choices, the constant c and the keep factor k are my suggestions to test, not established methods; no literature check was done on them.
+
+### 67. Next steps
+
+1. Session 1 of the study plan: POMDP agent loop and problem definition (observation, action set, reward, episode, what a step is; toy 3-state example; observation layout by protocol segment with presence masks).
+2. Code the belief module (viewers, recipes, DS fusion with both rules, temporal rule) and run the offline F1 vs F2 test; this chat is for understanding, the coding happens elsewhere using this md.
+3. Carry forward all open items from earlier sections, including the paused topics (cheap baselines and conformal prediction, Sections 28 and 29).
+
