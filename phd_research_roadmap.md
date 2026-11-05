@@ -4078,3 +4078,121 @@ If the DS advantage disappears under the fair test, the belief comparison become
 5. Reference answers for pending checks (not answered by the user in the session): (a) energy vs softmax: softmax only sees the ratio of the logits, energy also sees their size, so (10, 10, 10) has softmax max 0.33 like (1, 1, 1) but energy -11.1 vs -2.1. (b) MMPP viewer circularity: if the simulator generates traffic from the same MMPP, the viewer fits perfectly because it learned the generator itself, whereas real CICIoT2023 traffic is not exactly MMPP, so the fit is worse and more honest. (c) Continuous number with a spread: arrival rate, GRU residual; category: the attack state.
 6. Paused (resume later): cheap baselines (softmax, energy, Mahalanobis, ensembles, MC dropout) and conformal prediction step by step (Section 28 and 29 material).
 7. Carry forward all open items from earlier sections.
+
+---
+
+## UPDATE — 5 November 2026 (new sections only; everything above is unchanged)
+
+Today: how EDL and DS work together (Section 53), how fuzzy would fit in (Section 54), and a correction to my own framing of the roles of EDL, DS and fuzzy (Section 55). These extend Sections 47 and 48 (3 November). Items marked (suggestion) are mine, not decisions.
+
+### 53. EDL and DS together in more detail
+
+**The connection in one line:** EDL's output (b, u) is already a DS mass function (mass b_k on each single state, u on Omega). DS then does what EDL cannot do alone: fuse it with other viewers and report conflict.
+
+Conversion for K = 3: S = 12 + 3 = 15, b = e/S = (0.133, 0.600, 0.067), u = 3/15 = 0.2 (sum 1).
+
+**Worked example:** a second viewer (the MMPP, after conversion) gives {D,S} 0.5, Omega 0.5.
+
+| | {D,S} 0.5 | Omega 0.5 |
+|---|---|---|
+| {N} 0.133 | empty 0.067 | {N} 0.067 |
+| {D} 0.600 | {D} 0.300 | {D} 0.300 |
+| {S} 0.067 | {S} 0.033 | {S} 0.033 |
+| Omega 0.200 | {D,S} 0.100 | Omega 0.100 |
+
+K = 0.067.
+
+| | Dempster (divide by 0.933) | Yager (K to Omega) |
+|---|---|---|
+| {N} | 0.071 | 0.067 |
+| {D} | 0.643 | 0.600 |
+| {S} | 0.071 | 0.067 |
+| {D,S} | 0.107 | 0.100 |
+| Omega | 0.107 | 0.167 |
+
+Pignistic on the Dempster result (group mass shared equally): D about 0.73, S about 0.16, N about 0.11. Reading: most likely DDoS, with a little room for scan and for unknown.
+
+**What each part contributes:**
+
+| | EDL | DS |
+|---|---|---|
+| Learns from data | Yes (the network learns evidence per input) | No learning of its own |
+| Mass on groups like {D,S} | No | Yes (from other viewers) |
+| Conflict number K | No | Yes |
+| Fuses several viewers | No | Yes |
+| Trust | No | Discounting |
+
+**Trust example:** on a new protocol, discount the EDL viewer with t = 0.5: masses become {N} 0.067, {D} 0.30, {S} 0.033, Omega 0.60. Fusing again with Yager gives {D} 0.30 (instead of 0.60) and K falls to 0.033. The EDL viewer pulls half as hard.
+
+**Cautions:**
+1. DS does not fix EDL's own weakness. If EDL gives high evidence on a brand-new attack, DS inherits that confident mistake. Fusion helps only when another viewer disagrees, which then shows up as K.
+2. Independence: an EDL head trained on the same data as the GRU is not independent evidence, so Dempster may become overconfident.
+3. Thresholds on K and m(Omega) are design choices, tuned on validation data and tested on held-out attacks.
+4. In the anti-UAV study (Section 29, paper 9), EDL helped but DS fusion added nothing when conflict was rare. Test the hybrid arm against plain probability averaging.
+
+### 54. Adding fuzzy (EDL + DS + fuzzy)
+
+**Status:** I found no established recipe for this three-way combination in IoT intrusion detection. Everything below is a suggestion. Fuzzy is used as a **converter** ("Way A", Section 40), not as Fezzani's fuzzy focal elements ("Way B").
+
+**Where fuzzy fits:** EDL already gives masses directly. Viewers that do not (GRU residual, Mahalanobis, rate-based rules) need a conversion, and fuzzy ramps can do it.
+
+**Example (GRU residual is 3 times its normal level):** "high" ramp from 1x to 4x: mu_high = (3 - 1) / (4 - 1) = 0.667, mu_low = 0.333. Cap the total belief with a reliability rho = 0.8 so some mass stays on Omega: m({D,S}) = 0.8 x 0.667 = 0.533, m({N}) = 0.8 x 0.333 = 0.267, Omega = 0.2. The ramp endpoints and rho are design choices; a better way to set them is from percentiles of the residual on normal validation data.
+
+**Fusing the EDL viewer with the fuzzy-converted GRU viewer:** EDL {N} 0.133, {D} 0.600, {S} 0.067, Omega 0.2. Fuzzy GRU {N} 0.267, {D,S} 0.533, Omega 0.2. Conflict cells: {N}x{D,S}, {D}x{N}, {S}x{N}. K = 0.249.
+
+| | Dempster (divide by 0.751) | Yager |
+|---|---|---|
+| {N} | 0.154 | 0.116 |
+| {D} | 0.586 | 0.440 |
+| {S} | 0.065 | 0.049 |
+| {D,S} | 0.142 | 0.107 |
+| Omega | 0.053 | 0.289 |
+
+Pignistic on Dempster: D about 0.67, S about 0.15, N about 0.17.
+
+**Reading it:** K = 0.25 (EDL says DDoS, the GRU viewer partly leans normal). Dempster hides that behind a confident-looking 0.59 on {D}; Yager keeps it visible as Omega = 0.29. For 0-day detection the Yager reading is the one wanted.
+
+**Honest assessment of what fuzzy adds:**
+- Once a ramp is calibrated against validation percentiles, it behaves like a smooth calibration curve (isotonic calibration does something similar). Fuzzy mainly adds readable rules and a familiar vocabulary, not accuracy.
+- Fuzzy rules ("IF rate is high AND peers are many THEN suspicious") could serve as an extra viewer whose firing strength becomes a mass. That helps explainability and ties to the XAI extension.
+- Fezzani's fuzzy focal elements do not apply, because the states are categorical (Section 40).
+
+**Where each goes in the experiments:**
+
+| Arm | Tier (Section 46) |
+|---|---|
+| EDL as one viewer inside DS (Dempster and Yager) | Core hybrid arm |
+| Same, with fuzzy converters for the GRU and MMPP viewers | Extended arm |
+| Fuzzy-rule viewer for explainability | Extension, tied to XAI |
+
+**Test against the simplest alternative first:** a percentile-based converter with no fuzzy vocabulary. If both perform the same, say so in the paper and keep the simpler one.
+
+### 55. Correction: roles of EDL, DS and fuzzy (clarified in the session)
+
+1. **EDL adds the learning.** It is the viewer that learns from data (traffic window to evidence to (b, u)). DS itself has no learning.
+2. **DS is the fusion layer and the backbone of the belief, but "Yager" is not settled as the main rule.** Dempster and Yager are two rules inside DS. Yager fits 0-day detection better in theory (conflict becomes "unknown"), but it is untested on my data. Run both as arms, let the result decide, and always report K.
+3. **Fuzzy and the {A,B} split (two different uses, do not mix them):**
+   - The unequal split inside a group (for example A 80%, B 40% instead of 50/50) only exists with **fuzzy focal elements** (Fezzani's way, "Way B"). The degrees are not percentages that add to 100 (0.8 + 0.4 = 1.2 is fine); the split happens only at the decision step as degree divided by total degree.
+   - Example: fuzzy focal element (A 0.8, B 0.4) with mass 0.30: A = 0.30 x 0.8 / 1.2 = 0.20, B = 0.30 x 0.4 / 1.2 = 0.10. Crisp {A,B} gives 0.15 each.
+   - In my pipeline's use of fuzzy ("Way A", a converter from a number to ordinary crisp masses), {D,S} stays a crisp group and its pignistic split stays 50/50.
+   - **An unequal split without fuzzy:** put separate masses on {D} and on {D,S}. Example: m({D}) = 0.20 and m({D,S}) = 0.10 gives D = 0.20 + 0.05 = 0.25 and S = 0.05.
+
+**Corrected summary:**
+
+| Part | Role in the pipeline |
+|---|---|
+| EDL | learns evidence, produces (b, u), one of the viewers |
+| DS (Dempster and Yager) | fuses viewers, reports K and ignorance; both rules tested |
+| Fuzzy (Way A) | converts a number to crisp masses, mostly for readability |
+| Fuzzy (Way B, Fezzani) | unequal split inside a group; needs a numeric axis, so not for categorical states |
+
+### 56. Reference answer for the pending check
+
+- In the fused example K = 0.249. A high K means the viewers disagree (EDL says DDoS, the fuzzy GRU viewer leans normal), which may signal something new. Yager shows it because it adds K to Omega (0.289), while Dempster divides K away and rescales (Omega drops to 0.053), hiding the disagreement. Always report K with either rule.
+
+### 57. Next steps
+
+1. Moving on to a new part (to be chosen by the user). Paused from before: cheap baselines and conformal prediction (Sections 28 and 29).
+2. Open design items: viewer-to-mass conversion rules (Section 47); DS temporal rule (Section 45 item 4); which viewers and rule the CICIoT2023 DS run used (Section 44); independence between viewers (measure it).
+3. Test the hybrid arm "EDL as one viewer inside DS" against probability averaging and against the percentile converter without fuzzy.
+4. Carry forward all open items from earlier sections.
