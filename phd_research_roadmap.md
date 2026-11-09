@@ -4390,3 +4390,188 @@ Name: use k for the keep factor to avoid confusion with RL's discount gamma. Thi
 2. Code the belief module (viewers, recipes, DS fusion with both rules, temporal rule) and run the offline F1 vs F2 test; this chat is for understanding, the coding happens elsewhere using this md.
 3. Carry forward all open items from earlier sections, including the paused topics (cheap baselines and conformal prediction, Sections 28 and 29).
 
+The window block is split into fixed protocol-segment slots (for example Wi-Fi, Zigbee/Z-Wave, 5G). A missing segment is zero-filled with a "not present" flag (the presence mask). This is the design constraint from the notes, so Papers 2 and 3 do not force a redo.
+
+**Trade-offs:** more inputs mean a bigger network and more data needed; raw features and the belief together may duplicate information (test belief only vs window only vs both); the layout must stay fixed across homes or federated averaging breaks.
+
+**Check answer:** an agent isolates a device at step 5 and sees zero traffic at step 6; it could confuse this with "the attack ended" or with the device simply being idle or offline; the last-action block lets it see that the silence is its own doing.
+
+### 74. PPO, GRU/LSTM and the model-based path are separate topics
+
+- **PPO is the training method; GRU/LSTM is a possible building material for the policy network.** They answer different questions. "Recurrent PPO" means PPO training a policy that has a recurrent network inside.
+- **Plain picture (chef and coach):** the chef's brain is the policy; PPO is the coach ("do a bit more of what worked better than expected, but do not change too much at once"). The coach does not care how the brain is wired: a brain with no memory (feed-forward) or with memory (GRU/LSTM). Same coach.
+
+| | PPO with a feed-forward policy | PPO with a recurrent policy |
+|---|---|---|
+| Policy network | a few ordinary layers | the same plus a GRU or LSTM layer |
+| Input at each step | the current observation | the observation plus a hidden memory vector from the last step |
+| Training | steps can be shuffled | steps kept in order inside an episode; memory reset at each episode start |
+| The PPO update rule | unchanged | unchanged |
+
+- **Three different GRUs (name them separately in experiments):**
+
+| GRU as | Job | Trained by |
+|---|---|---|
+| World model (GRU-wm) | predicts the next traffic, used for imagined rollouts (MBRL) | prediction error on traffic data |
+| Viewer (GRU-viewer) | its prediction error becomes a mass function | the same, trained on normal traffic |
+| Inside the policy (GRU-policy) | gives the policy memory | PPO, together with the rest of the policy |
+
+- **PPO is independent of the model-based choice; the only link is where it gets its practice data.** Model-free: practice in the real kitchen (replay or simulator traffic). Model-based: also practice in an imagined kitchen (traffic invented by the world model). Independent: PPO update rule, policy network, belief module and viewers. Not independent: the data PPO trains on. (Suggestion: write PPO once behind a clean interface, "give me batches of observation, action, reward from some environment", then swap the environment between real replay, the MMPP simulator and the world model's imagination.)
+- **Caveats for the MBRL arm (suggestions):** PPO learns from fresh experience, so imagined traffic must be regenerated as the policy changes, not stored and reused; a world model's mistakes pile up over long imagined episodes, so imagined rollouts are usually kept short or mixed with real data.
+- **What is frozen before PPO:** the viewers (EDL, GRU-viewer, MMPP) and the world model; the belief rules (k, conversion settings) are fixed beforehand and tuned separately. PPO trains only the policy network.
+- **Correction (PPO trains in an environment, not directly on recorded data):** recorded traffic cannot react to the agent's actions (if the agent throttles a device, the dataset's next window does not change). PPO practices in an environment built from the real data: traffic comes from replay or from the MMPP/world model, and the effect of each action is modeled. Real data calibrates that environment and is used to test the result. The world model can also be refreshed with new data; "frozen" is a simplifying choice.
+- **Check answer:** in "belief as input plus a feed-forward policy", the memory lives in the belief (carry-forward rule with keep factor k); PPO changes only the policy network's weights.
+
+### 75. PPO: library or from scratch, the variants, and a correction on BF-PPO
+
+**Verdict: use a library.** PPO has many fiddly implementation details (the CleanRL authors published a well-known guide to them; verify), and silent mistakes ruin results. Write it from scratch only to learn, or if a change no library supports is needed.
+
+| Goal | Tool | Note |
+|---|---|---|
+| Understand PPO | CleanRL `ppo.py` | CleanRL is single-file implementations (all details of an algorithm variant in one standalone file) and is not meant to be imported as a library |
+| Run experiments | Stable-Baselines3 `PPO` | standard baseline, easy to defend |
+| Recurrent policy (arm B) | `RecurrentPPO` from sb3-contrib (PPO with an LSTM policy; listed as experimental in the contrib package) | pass the LSTM states and episode-start flags correctly when calling `predict()` |
+| Invalid actions | `MaskablePPO` from sb3-contrib | useful when an action does not exist in a segment or to forbid rung 3 before rung 2 |
+| DQN baseline arm | not checked in this session | verify what Stable-Baselines3 offers |
+| Paper 3 (multi-agent) | see below | choose when Paper 3 starts |
+
+**What the user writes versus what the library provides:** the library provides the learning algorithm; the user writes the environment, the belief module, the viewers and the reward.
+```python
+from stable_baselines3 import PPO
+env = MyIoTDefenseEnv(...)      # YOUR code: replay or simulator, belief module,
+                                # viewers, action effects, reward
+model = PPO("MlpPolicy", env)   # library: the PPO recipe
+model.learn(total_timesteps=1_000_000)
+# recurrent arm: RecurrentPPO("MlpLstmPolicy", env)
+```
+The environment must follow the Gymnasium interface (`reset` and `step`, where `step` returns observation, reward and an end flag). Most of the work is the environment, the belief module and the reward, which is why Session 1 matters more than the PPO library. Code not run in the session; versions and behavior with a custom belief input not checked.
+
+**The variants decoded:**
+
+| Name | What it changes | Where it fits |
+|---|---|---|
+| PPO | the baseline | Arm A |
+| Recurrent PPO | the policy has LSTM memory | Arm B (`RecurrentPPO`) |
+| BF-PPO | PPO whose input is a belief from a filter | the belief arms |
+| IPPO | one independent PPO per agent | Papers 2 and 3 |
+| MAPPO | several agents, each with its own actor, one shared critic during training (centralized critic, decentralized actors); the only difference from IPPO is the central critic | Paper 3 |
+| MaskablePPO | forbids invalid actions | action masks |
+
+MAPPO libraries found (not compared): EPyMARL (includes IPPO and MAPPO), MARLlib (built on Ray/RLlib), the original authors' `marlbenchmark/on-policy` code, CleanMARL (includes an LSTM variant).
+
+**Correction to the notes (BF-PPO attribution):** earlier notes (Section 29 and the novelty table) and my earlier replies attributed BF-PPO to Hammar and Stadler. The paper found in this session, "Learning Optimal Defender Strategies for CAGE-2 using a POMDP Model" by Duc Huy Le and Rolf Stadler (arXiv 2509.06539), introduces BF-PPO (Belief Filter Policy Proximal Optimisation), which combines PPO with a particle filter, evaluated in the CybORG environment. Same KTH group; the CAGE-2 setting is a simulated enterprise network, not IoT or OT. BF-PPO is ordinary PPO plus a belief as input: the same pattern as this plan, with the DS belief in place of the particle filter, so no special PPO needs to be implemented. Fix the attribution in the comparison tables and verify from the paper itself.
+
+**Check answer:** for the arm "DS belief as input with a feed-forward policy", the user writes the environment, belief module, viewers and reward; the library provides the PPO learning algorithm.
+
+### 76. Step 4: what the agent can do (the action ladder)
+
+**Plain picture (traffic officer at a busy junction):** watch; wave cars slower (cheap, easy to undo); close one lane for ten minutes; close the road and call the city. Two rules: higher rungs hurt more innocent drivers if he is wrong, and higher rungs are harder to undo, so he climbs only when confident.
+
+| Rung | Action | What it does | If the agent is wrong |
+|---|---|---|---|
+| 0 | Wait / watch | nothing changes | an attack continues, no harm to innocents |
+| 1 | Rate-limit | caps the device's traffic | slows a legitimate device |
+| 2 | Temporary block | blocks the device for a set time | a legitimate device goes dark for a while |
+| 3 | Blacklist (better named "isolate and alert the operator", since a permanent block should involve a person) | blocked until a human reviews | dark until someone notices |
+
+**The belief decides how high to climb (hand-written illustration; PPO learns the real mapping):** mostly Normal = rung 0; abnormal with much ignorance or U = rung 1 (cheap, reversible); strongly abnormal with viewers agreeing (K low) = rung 2; strongly abnormal for several steps in a row = rung 3. A hand-written version of this table becomes the rule-based baseline in Step 7.
+
+**Two designs for moving on the ladder:**
+
+| Design | Plain version | Strength | Weakness |
+|---|---|---|---|
+| A: pick a rung directly | each step choose 0, 1, 2 or 3 | reacts in one step | can jump straight to rung 3 |
+| B: step up, hold, or step down | each step move one rung (or stay) | smooth escalation and de-escalation | slow against a fast attack; needs the current rung in the observation (already in the last-action block) |
+
+(Suggestion: start with design A and forbid rung 3 unless the agent has already been at rung 2, using an action mask; compare design B as an arm.)
+
+**Time-limited blocks:** needs a duration. Simplest start: a fixed duration, for example 60 s (12 steps at Delta = 5 s), then the block expires and the agent decides again. Letting the agent choose short, medium or long multiplies the actions; test later. **Side effect:** while a device is blocked the agent sees zero traffic from it and gets no evidence on whether the attack stopped; the old belief fades toward "I do not know" (Omega) during the block, and the first windows after expiry act as a probe. This is why the last-action block matters.
+
+**Reward and penalty do not move the action up or down while the agent runs.** Reward only shapes training; after training the frozen policy picks the rung from the belief.
+
+**Three things the environment needs, or it hits a wall later:**
+1. What each action does to traffic: per rung, how much attack traffic and how much legitimate traffic survive (for example a rate-limit might cut both by half). These numbers are assumptions and need a justification; results are only as trustworthy as they are.
+2. Which device an action applies to: the agent is per home, actions apply to one device. Options: (i) the agent picks the rung and a fixed rule picks the device (the one with the most abnormal mass), or (ii) the agent outputs a rung per device, which makes the action size change with the number of devices and breaks the fixed layout federated averaging needs. (Suggestion: start with (i); open decision for the supervisor.)
+3. Protocol-specific meaning: "block an IP" does not exist on Zigbee (the equivalent might be blocking a join or rotating a key). The four rungs stay abstract for now; the real mapping per protocol is still open (flagged earlier).
+
+### 77. Reaction time against false positives (Delta = 5 s vs Delta = 2 s)
+
+**Time to reach the top rung under design B (one rung per step):** Delta = 5 s gives rung 1 at 5 s, rung 2 at 10 s, rung 3 at 15 s. Delta = 2 s gives 2 s, 4 s, 6 s (less than half). Under design A the top rung could be reached in one step (5 s or 2 s).
+- **Each rung is also a test:** the agent rate-limits and, in the next window, sees whether the traffic dropped; if the device was legitimate and traffic returns to normal it can step down, if the attack continues it climbs. The officer waves cars slower first and sees whether the jam clears before closing the road.
+- **Risk if the attack is fast:** if damage happens in under 15 s, design B reacts too late. IoT attack speed is unknown; treat it as a scenario parameter (see the anchor in Section 71, verify).
+- **Fixes to test (suggestions):** bigger jumps only when the belief is strongly abnormal and the viewers agree (low K); shorter steps during escalation (every 1 to 2 s once the belief rises); design A with a mask.
+
+**The user's concern (a high spike without an attack becoming a false positive within 6 seconds) and the twist:** a spike and an attack differ by persistence (burnt toast beeps once, a fire keeps beeping). The belief has memory, so one spike window raises it a little (rung 1, cheap and reversible), a normal next window lets it fall back (step down), and several abnormal windows in a row keep it climbing. PPO learns not to climb on a single window once false isolations are punished in the reward.
+
+**One-window spike timeline (agent rate-limits for one step, then steps down):**
+
+| | Delta = 2 s | Delta = 5 s |
+|---|---|---|
+| Agent sees the spike | t = 2 s | t = 5 s |
+| Device rate-limited | 2 s to 4 s | 5 s to 10 s |
+| Time the legitimate device is limited | 2 s | 5 s |
+| Time to react to a real attack | 2 s | 5 s |
+
+A short step reacts faster and also recovers faster. (In practice the agent may hold the rung one extra step while the belief is still elevated.) **Costs of the short step:** 2.5 times more steps to train; noisier windows if the window shrinks with the step (normal bursts look more like spikes, so more frequent but shorter false alarms); a subtle blind spot while limited (calmer traffic hides whether the spike ended, so step down only after a normal-looking window; if W stays 5 s with an update every 2 s, windows overlap and the belief double-counts).
+
+**What decides Delta:** a measurement, not an argument: sweep Delta in {1, 2, 5, 10} s and plot time to contain a real attack against harm to legitimate devices (seconds of limited traffic per hour of normal operation); pick where the curve bends. The reward (Section 78) turns the trade-off into one number.
+
+### 78. Step 5: the reward
+
+**Plain picture (a guard's performance review):** at the end of each shift the guard gets a score and is never told what to do. Three things move it: a burglary got through (bad), he stopped an innocent person (bad, usually less than a burglary), and heavy measures cost effort each time. Over many shifts he learns when to act and when to wait. PPO is that learning; the reward is the score.
+
+**Where it comes from:** the environment computes it each step from what actually happened (the simulator knows the true state; the agent does not). It exists only for training; at deployment nobody computes it and the frozen policy simply acts.
+
+**Three parts (suggestion):**
+
+| Part | Meaning | Symbol |
+|---|---|---|
+| Missed-attack cost | attack traffic that got through this step | M |
+| False-block cost | legitimate traffic that was cut this step | F |
+| Action cost | a small price per rung (rung 3 involves a human, so the biggest) | A |
+
+Per step: reward = -(M x attack that survived) - (F x legitimate traffic lost) - (A x rung number).
+
+**Example (M = 1, F = 1, A = 0.2):**
+
+| Rung | Attack traffic surviving | Legitimate traffic lost (if the device is innocent) | Action cost |
+|---|---|---|---|
+| 0 wait | 1.0 | 0 | 0 |
+| 1 rate-limit | 0.5 | 0.5 | 0.2 |
+| 2 block | 0 | 1.0 | 0.4 |
+
+Over 3 steps: policy "wait" scores -3 on a real attack (-1 -1 -1) and 0 on a false alarm. Policy "act" (rung 1, then rung 2, then rung 2) scores -1.5 on a real attack ((0.5 + 0.2) + 0.4 + 0.4) and -3.5 on a false alarm ((0.5 + 0.2) + (1 + 0.4) + (1 + 0.4)). Acting is far better against a real attack and far worse against an innocent device; neither wins everywhere, which is why the agent needs a belief.
+
+**How the reward becomes "how sure must I be" (q = probability the device is attacking):** expected cost of waiting = 3q; of acting = 1.5q + 3.5(1 - q) = 3.5 - 2q. Acting is better when 3.5 - 2q < 3q, so q > 0.7. With F = 2 the false-alarm cost becomes 1.2 + 2.4 + 2.4 = 6.0, so acting costs 6 - 4.5q and the threshold is q > 0.8. With F = 0.5 the false-alarm cost is 0.45 + 0.9 + 0.9 = 2.25, so acting costs 2.25 - 0.75q and the threshold is q > 0.6. The ratio between F and M is the "caution dial" (surgeon analogy: the riskier the surgery, the surer he must be).
+
+**Things that can go wrong:** attacks are rare, so "never act" scores well most steps if the missed-attack cost is too small (the agent learns to sit still); the reverse, if false blocks are cheap the agent blocks everything; the weights are judgment calls and belong in the threat model (sweep them and report the trade-off curve of missed attacks against false blocks, not one magic setting); unknown attack families need realistic damage in the simulator or the agent has no reason to deal with U; the belief must be calibrated or it misleads the agent; rung costs (rung 3 is operator time) have no real numbers.
+
+### 79. Reference answers for pending checks (not answered by the user in the session)
+
+- Step 4 check (design B, Delta = 5 s, attack starts, agent wants rung 3): 15 s; risk: a fast attack finishes first. With Delta = 2 s: 6 s (the user computed this).
+- Rate-limit timeline check: Delta = 2 s gives 2 s of limiting, Delta = 5 s gives 5 s (the user's reading was correct).
+- Last-action check (one sentence): the agent needs the last action because calm traffic from a limited device could mean "the attack ended" or "my own limit is working".
+- Step 5 check (if F = 2, more or less sure?): more sure; threshold q > 0.8 (up from 0.7).
+
+### 80. Openings from today's questions, open items and next steps
+
+**Openings that came out of the questions:**
+1. The belief pays off only if one window is ambiguous: keep arm A (pretend MDP) against the belief arms, and add an oracle arm in simulation as the upper bound.
+2. Sweep Delta in {1, 2, 5, 10} s (and the window) as an experiment: time to contain vs harm to legitimate devices; overlap as an ablation (double counting).
+3. Define memory in seconds and derive k from Delta.
+4. The environment needs assumed action-effect numbers (how much attack and legitimate traffic survive per rung), a device-selection rule and a protocol mapping; ask the supervisor early.
+5. PPO trains in an environment built from real data, not directly on recorded data; write PPO once behind a clean environment interface.
+6. Name GRU-wm, GRU-viewer and GRU-policy separately.
+7. Library plan: Stable-Baselines3 PPO (arm A), sb3-contrib RecurrentPPO (arm B) and MaskablePPO (action masks, such as forbidding rung 3 before rung 2); CleanRL to read and understand PPO; MARL libraries only when Paper 3 starts.
+8. Correct the BF-PPO attribution in the earlier tables (Le and Stadler, CAGE-2); verify from the paper.
+9. Reward weights and rung costs are a threat-model decision; sweep and report the trade-off; unknown attacks need realistic damage in the simulator.
+
+**Open items:**
+1. Session 1 Steps 6, 7, 8 (episode end and the U response; baseline policies and environment sanity checks; the one-page design document).
+2. Decisions listed in Section 68 (window, action list, reward weights, U response, episode length).
+3. Questions still open to the user (Section 68): RL background, window and overlap in the CICIoT2023 run, operator actions.
+4. Verify: attack-speed anchors (CrowdStrike, enterprise); the PPO implementation-details guide; what Stable-Baselines3 offers for a DQN arm; library versions and the behavior of RecurrentPPO with a custom belief input.
+5. Paused from before: cheap baselines and conformal prediction (Sections 28 and 29).
+6. Carry forward all open items from earlier sections, including Section 66 (Session 0) and Section 44 (the CICIoT2023 DS run).
+
+**Next time:** continue with Session 1, Step 6 (when does an episode end, and what does the agent do when the belief says "something new").
