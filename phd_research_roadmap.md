@@ -4575,3 +4575,277 @@ Over 3 steps: policy "wait" scores -3 on a real attack (-1 -1 -1) and 0 on a fal
 6. Carry forward all open items from earlier sections, including Section 66 (Session 0) and Section 44 (the CICIoT2023 DS run).
 
 **Next time:** continue with Session 1, Step 6 (when does an episode end, and what does the agent do when the belief says "something new").
+
+
+---
+
+## UPDATE — 12 November 2026 (new sections only; everything above is unchanged)
+
+Today: a full recap of the belief layer, then clarifications that came out of the questions: what Omega, K and U each mean, how EDL, SL, DS and fuzzy relate, which viewers form the panel and what each does, how the GRU and fuzzy fit together, what softmax is, and which states the system uses and how it grows. These sections are the reference for building the belief module and the simulation. Sections 68 to 80 (9 November) stay as they are. Items marked (suggestion) are mine, not decisions. Items marked (verify) have not been checked against sources.
+
+### 81. Recap: belief states and the 7 belief methods
+
+**Belief, in plain words:** the agent cannot see what is really happening in the network, only traffic numbers. So it keeps a running guess (the belief) and acts from the guess, not from the last window alone. It is the guard's notebook. Example: after a spike the belief is Normal 0.5, DDoS 0.2, Unknown 0.1, Omega 0.2; one more unusual window moves it to Normal 0.2, DDoS 0.3, Unknown 0.3, Omega 0.2; the agent acts on that shift, not on one spike.
+
+| # | Method | Plain idea | Tiny example | Weak spot |
+|---|---|---|---|---|
+| 1 | Bayesian (known states only) | One percentage per state. Multiply the previous belief by how well each state explains the clue, then rescale | Prior N 0.9, D 0.1; a spike has likelihood 0.05 under N and 0.9 under D; products 0.045 and 0.09; result N 0.33, D 0.67 | Cannot say "I do not know": (1/3, 1/3, 1/3) can mean no idea or a real even split |
+| 2 | Bayesian with an Unknown state | Add a state U with a guessed prior and guessed likelihoods | Prior N 0.88, D 0.10, U 0.02; spike likelihoods 0.05, 0.9, 0.5; products 0.044, 0.09, 0.01; result N 0.31, D 0.63, U 0.07 | U's numbers are guesses, since a 0-day has no examples |
+| 3 | DS with Dempster | Mass on groups of states; Omega holds ignorance; combine viewers in a grid (overlap decides where the mass goes, the product decides how much) | Viewer 1 {D,S} 0.6, Omega 0.4; viewer 2 {D} 0.5, Omega 0.5; result {D} 0.50, {D,S} 0.30, Omega 0.20 | Conflict K is thrown away and the rest scaled up, which can give false confidence (Zadeh) |
+| 4 | DS with Yager | Same grid; conflict K is added to Omega instead of divided away | Viewer 1 {N} 0.6, Omega 0.4; viewer 2 {D} 0.5, Omega 0.5; K = 0.30; Dempster: N 0.43, D 0.29, Omega 0.29; Yager: N 0.30, D 0.20, Omega 0.50 | More cautious, so more "unknown" alerts |
+| 5 | EDL | A network outputs evidence per class (counts); ignorance u = K/S | K = 3: [0,30,2] gives u = 0.09 (confident); [0,0,0] gives u = 1 (unknown); [30,30,30] gives u = 0.03 with b = 0.32 each (conflict) | Can be confidently wrong on a brand-new attack, because training never shows one |
+| 6 | Subjective logic | The same (b, u) built from counts, plus a base rate, fusion and trust | Counts 6, 3, 1 (K = 3): S = 13, b = (0.46, 0.23, 0.08), u = 0.23 | No conflict number K, no mass on groups |
+| 7 | Fuzzy | A value fits a vague word to a degree between 0 and 1 (about vague words, not about uncertainty) | 700 packets per second on a "high" ramp from 200 to 1,000 gives mu = 500/800 = 0.625 | No "how much evidence" number, no conflict number |
+
+**Shared ideas:**
+- **Omega** = "I have no evidence". **K** = "my sources disagree". **U** (frame F2) = "something is wrong and it is not any family I know". Three different things.
+- **Trust** is a number from 0 to 1 per viewer; multiplying the masses by 0.5 moves half of the viewer's belief into "I do not know" (Omega).
+- **Frame F2** = {N, D, S, U}: lets "abnormal, family unclear" be written as {D,S,U} instead of falsely as {D,S}.
+- **Memory:** the old belief fades by a keep factor k and is fused with the new window (Section 64).
+
+### 82. Omega, K, U and Yager: clarifications
+
+- **Omega is not an equal split.** Plain picture: three witnesses. "I was not there, no idea" = Omega 1. "I looked carefully and it is truly equally likely to be any of them" = mass 1/3 on each single state. "Witness 1 says N, witness 2 says D" = conflict K. Behavior when fused with a third viewer Z = {D} 0.6, Omega 0.4:
+  - the "no idea" witness (Omega = 1) changes nothing: result {D} 0.6, Omega 0.4. Omega is neutral, it adds no opinion;
+  - the "even split" witness (1/3 each) gives cells {N}x{D} empty 0.2, {N}xOmega = {N} 0.133, {D}x{D} = {D} 0.2, {D}xOmega = {D} 0.133, {S}x{D} empty 0.2, {S}xOmega = {S} 0.133; K = 0.4; Dempster (divide by 0.6): N 0.22, D 0.56, S 0.22. It argues against Z.
+  - Check (viewer 1 Omega = 1, viewer 2 {D} 0.5, Omega 0.5): K = 0 and the result is viewer 2 unchanged, {D} 0.5, Omega 0.5.
+- **Why they get confused:** at the decision step the pignistic transform shares Omega equally among the states, so Omega = 1 and (1/3, 1/3, 1/3) end up with the same decision numbers. They are different beliefs and behave differently the moment they are fused with anything else. Plain Bayesian numbers cannot tell them apart.
+- **K is not "I do not know".** K says the sources contradict each other. That is information and often points to something new (two viewers that normally agree started to disagree). "Conflict means don't know" is Yager's choice: Dempster throws K away and scales the rest up (K leaves the belief, but report it anyway); Yager adds K to Omega.
+- **Yager does have an "I do not know" state: it is Omega, made bigger.** Omega_final = Omega1 x Omega2 + K. Example (viewer 1 {N} 0.6, Omega 0.4; viewer 2 {D} 0.5, Omega 0.5): ignorance part 0.4 x 0.5 = 0.20; K = 0.30; Dempster Omega = 0.20 / 0.7 = 0.29; Yager Omega = 0.20 + 0.30 = 0.50.
+- **Downside of Yager:** after adding K you cannot tell how much of Omega is ignorance and how much is conflict. Save both numbers before adding them: report K and the ignorance part separately, keep the combined Omega for the belief.
+
+| Symbol | Means | Where it comes from |
+|---|---|---|
+| Omega | no evidence | what a viewer reports about itself |
+| K | the viewers disagree | what the fusion grid measures |
+| U | something wrong that fits no known family | a state added in frame F2 |
+
+### 83. EDL vs DS, SL and fuzzy: how they relate
+
+**EDL is not a belief language like DS, SL or Bayes; it is a belief producer.** Plain picture (a court case): EDL is a trained witness who reports how much evidence it found for each class; DS, SL and Bayesian are the court's rules for writing testimony down and weighing several witnesses.
+
+| Layer | Job | Members |
+|---|---|---|
+| Source (viewer) | turns a window into a signal or evidence | EDL, GRU residual, MMPP likelihood, softmax, ensembles |
+| Belief language | how a claim and its uncertainty are written | Bayesian probabilities, DS masses, SL opinions |
+| Fusion and trust | combines several viewers | Dempster, Yager, SL fusion, Bayes, averaging, discounting |
+
+EDL sits in the first layer, but its output is written in the language of the second (an SL opinion or a DS mass function). Tables that mix the layers need a "layer" column. For a fair experiment, compare within a layer: viewers against viewers (EDL vs softmax vs ensemble vs MC dropout); fusion rules against fusion rules (Dempster vs Yager vs SL fusion vs Bayes vs plain averaging); plus the hybrid arm "EDL as a viewer inside DS fusion".
+
+**The user's EDL vs DS comparison, checked:** right that EDL is a DL model and learns; right that DS allows mass on groups like {A,B} (call them masses; "weights" usually means trust); both give a full set of numbers per viewer, but only DS allows groups; Omega is not a difference, because EDL's ignorance u is the mass on Omega.
+
+| | EDL | DS |
+|---|---|---|
+| What it is | a neural network (a viewer) | a way to represent and combine belief |
+| Learns from data | yes | no |
+| Mass on groups like {D,S} | no | yes |
+| Omega ("no evidence") | yes, as u | yes |
+| Fuses several viewers | no | yes |
+| Conflict number K | no | yes |
+
+**SL in one hook:** star rating plus a "how many reviews" bar. An opinion for a yes/no claim is (b, d, u) with b + d + u = 1, from counts: b = r/(r+s+2), d = s/(r+s+2), u = 2/(r+s+2). 5 reviews (4 happy, 1 unhappy): b 0.57, d 0.14, u 0.29; 1,000 reviews (800, 200): b 0.80, d 0.20, u 0.002. With K states disbelief disappears (against one state means for the others): (b1, ..., bK, u), b_k = r_k/(K + sum r), u = K/(K + sum r). SL is DS restricted to single states plus Omega (u is Omega); it adds a base rate (P = b + a x u), fusion (different events: add the counts; the same events: average them) and trust (multiply b by t, the rest goes to u); it has no K and no groups. One sentence: SL is EDL's formula done by counting, with a base rate attached.
+
+**EDL vs SL:** the formulas are the same; the difference is who does the counting. SL: you count real observations (6 normal, 3 DDoS-like, 1 scan-like in 10 windows). EDL: a network predicts the evidence from the features of one window, trained on many past windows. EDL's evidence is a learned strength interpreted as counts, not literally observed counts, and whether it stays quiet on a brand-new attack is an experiment, not a guarantee. EDL's probability implicitly uses equal base rates; SL allows unequal ones.
+
+**Fuzzy in one hook:** CSS opacity, a slider instead of a checkbox. A value fits a vague word to a degree: a rate of 700 makes "high" about 62% opaque. It is not a probability (the rate is known exactly; the word is soft). The ramp is a clamp: mu_high = clamp((x - 200) / (1000 - 200), 0, 1); AND = min, OR = max, NOT = 1 - mu. Fezzani let the DS groups themselves be fuzzy because his unknown was a depth along a line (Section 37); categorical states do not need that. One sentence: the other methods measure how sure you can be; fuzzy measures how well something fits a vague word.
+
+**Memory hooks:** Bayesian = a probability per state, no "don't know". DS = a ballot with groups on it, Omega as "abstain", K as "the voters disagree". EDL = a network that outputs how much evidence it found. SL = star rating plus a "how many reviews" bar. Fuzzy = opacity, not a checkbox.
+
+### 84. Viewer types, panel and candidates
+
+**Plain picture (a panel of experts):** a hospital panel is strong when the experts differ (a radiologist reads images, a lab specialist reads blood tests, a nurse reads the history). Three radiologists reading the same scan add little. Each viewer should have its own specialty, its own input and its own way of failing.
+
+| Type | What it knows | Task in the system | Candidates |
+|---|---|---|---|
+| Label-trained classifier | known attack families | says which known family and how much evidence | EDL, LightGBM, an MLP |
+| Normality model | what normal looks like | says "abnormal" without a family; the main source of U | GRU residual, autoencoder, Mahalanobis |
+| Traffic-process model | burst and arrival structure | says how plausible the window's timing and rate are per class, and "nothing fits" | MMPP |
+| Structure and context | who talks to whom | fan-out or new-neighbor signals (Paper 3) | graph heuristic, GNN |
+
+**Suggested core panel (three different specialties; hypothesis, not established): EDL (known families, trained with labels), GRU residual (normality), MMPP (burst structure and "nothing fits").** Add a fourth (Mahalanobis, LightGBM) only as an ablation. More than about five is rarely worth it: each viewer needs its own conversion rule and tuning, correlations grow, and each adds ways for fusion to go wrong.
+
+| Idea | Verdict | Why |
+|---|---|---|
+| EDL, GRU with fuzzy, MMPP | good core design | three different specialties |
+| EDL with fuzzy | not needed | EDL already outputs masses; fuzzy only converts a number into masses |
+| GRU with or without fuzzy | a valid ablation | fuzzy ramp vs percentile mapping vs logistic calibration; a calibrated ramp is nearly the same as a percentile mapping |
+| LightGBM instead of the GRU | not a swap | LightGBM is a label-trained classifier (EDL's type), the GRU is a normality model; replacing the GRU removes the main source of U |
+| LightGBM plus EDL | correlated | both learn from the same labels and features; use one in the core panel |
+| Another RNN or DL model instead of the GRU | fine | same role, test as an arm |
+| MMPP replaced or dropped | possible | its unique role is the mathematical burst structure (the RAIDEN baseline); something else must cover the timing view |
+
+**Independence is the real measure of a good panel.** Give viewers different inputs (for example EDL on flow-statistics features, the GRU on the time series of rates, the MMPP on arrival counts) and measure the correlation between their outputs on validation data before trusting a fusion.
+
+**Precedent (verify):** DA-DCC-IDS (IEEE Access 2026, Section 29 paper 17) builds its novelty score from a per-device Mahalanobis density fitted on a projection of LightGBM leaf indicators, so LightGBM can feed novelty detection, but through extra processing.
+
+**Fusing three or more viewers with Yager:** Yager is not associative, so fusing pair by pair makes the result depend on the order. Suggestion: combine all viewers' masses at once, collect the total conflict and add it to Omega once. This is my reading of how Yager's rule extends to many sources; verify before coding it.
+
+**A learned-combiner baseline arm (suggestion):** a small learned combiner (for example logistic regression on the viewers' outputs) learns the importance automatically. If DS fusion cannot beat it, that is worth knowing.
+
+### 85. Label-trained classifier vs normality model (different logic, different blind spots)
+
+**Plain picture (two security guards):** Guard 1 studied a book of wanted posters and asks "which poster does this person match?" (answers with a name or "none"). Guard 2 studied only what a normal crowd looks like and asks "does this person look like the crowd I know?" (answers normal or odd, cannot name the person).
+
+| | Label-trained classifier (Guard 1) | Normality model (Guard 2) |
+|---|---|---|
+| Trained on | normal and attacks, with labels | only normal traffic, no labels |
+| Question | which known family is this? | does this look like normal? |
+| Answer | a family and its evidence | one "how odd" score |
+| Strong on | attacks it has studied | anything different from normal, including new attacks |
+| Weak on | new attacks (no poster: it guesses or stays quiet) | naming the family; unusual-but-harmless traffic also looks odd |
+
+| Situation | Classifier | Normality model |
+|---|---|---|
+| Known attack | good | good (it is odd) |
+| New attack | unreliable | good (it is odd) |
+| Harmless but unusual traffic (a firmware update) | may say "normal" | flags it as odd (a false alarm) |
+| Which family? | yes | no |
+
+Fused, "no poster matches" plus "odd" is exactly the {D,S,U} situation. A one-class classifier trained only on normal is a normality model; here the EDL has attack labels, the GRU never sees one.
+
+**The three guards in the 0-day story (illustrative masses, frame F2):**
+- GRU (odd): {N} 0.10, {D,S,U} 0.70, Omega 0.20. EDL (no poster matches): {N} 0.10, {D} 0.10, Omega 0.80. MMPP (nothing fits): {N} 0.06, {D} 0.11, {S} 0.06, {U} 0.57, Omega 0.20.
+- GRU x EDL grid: {N}x{N} = {N} 0.01; {N}x{D} empty 0.01; {N}xOmega = {N} 0.08; {D,S,U}x{N} empty 0.07; {D,S,U}x{D} = {D} 0.07; {D,S,U}xOmega = {D,S,U} 0.56; Omega x{N} = {N} 0.02; Omega x{D} = {D} 0.02; OmegaxOmega = Omega 0.16. K = 0.08. Dempster: {N} 0.11, {D} 0.09, {D,S,U} 0.56, Omega 0.16 (before dividing by 0.92). Yager: Omega = 0.24. Fusing the MMPP next gives mass on {U} (its {U} meets {D,S,U}); the third step was not computed in the session.
+- Reading: the viewers agree it is abnormal, none points to a known family, the MMPP says nothing known fits; the fused belief concentrates on U and the abnormal groups.
+
+**What the DS output can and cannot claim:**
+1. It does not say "0-day attack" with certainty; it says a large share of belief sits on U and the abnormal groups. A threshold on that mass (set on validation data) turns it into an alarm.
+2. U can be a false alarm: "odd and unknown" also describes a firmware update, a new device or an unusual legitimate burst. DS cannot tell a malicious unknown from a harmless one, so the response is a graded, gentle action (watch, then rate-limit), not an instant block.
+3. The viewers are not independent (the GRU and MMPP both learned from normal traffic), so two "odd" votes are weaker evidence than they look and Dempster may exaggerate.
+4. It only works if the viewers are calibrated (a GRU ramp set too low makes normal bursts trigger it).
+5. The test comes from hidden families (Section 63).
+
+**Mixed case:** GRU says normal, EDL says no poster matches, MMPP says nothing fits: the disagreement matters more than the U mass. The GRU's {N} contradicts the MMPP's {U}, so K rises. Read K and Omega, not the U mass alone. Most likely one viewer is miscalibrated or the traffic is odd but harmless, so respond gently.
+
+### 86. What each viewer outputs, and the GRU, MMPP and fuzzy details
+
+**Correction to earlier wording: the GRU is a predictor (regression), not a classifier.** Plain picture: a weather forecaster who studied only normal days; each morning you compare his forecast with what happened; a small gap means a normal day, a big gap means something strange. The GRU is trained on normal traffic only to predict the next window's numbers (no attack label ever). At run time it predicts the next window, the real one arrives, and the gap is the signal. The "normal or odd" verdict is made afterwards, by turning the gap into masses. (The earlier shorthand "GRU says normal or odd" squeezed those two steps together.)
+
+**The MMPP is not a state tracker in this recipe.** It is a per-class likelihood viewer: how well the window's timing and rate pattern fits each known class's process. A good fit for N means normal; a poor fit for every class means "nothing I know explains this", which points at U (recipe 2, Section 60). The MMPP and EDL are viewers; neither is a belief language.
+
+**Fuzzy is not inside the GRU; it is a step after it:**
+```
+past windows -> GRU -> predicted next window (numbers)
+actual window arrives
+   -> residual: one number, "how far off, in units of normal error"
+   -> ramp (fuzzy or percentile) -> degree of "high" in [0, 1]
+   -> masses on {N}, {D,S,U}, Omega
+```
+Example: the GRU predicts a rate of 100, the actual rate is 220, normal error sigma = 50, so the residual = 120 / 50 = 2.4. The ramp runs from 1.5 to 3.0 (percentiles of normal residuals): degree "high" = (2.4 - 1.5) / 1.5 = 0.6. With reliability rho = 0.8: m({N}) = 0.8 x 0.4 = 0.32, m({D,S,U}) = 0.8 x 0.6 = 0.48, Omega = 0.20. Checks (answered by the reference): s = 1.8 gives degree 0.2, N 0.64, {D,S,U} 0.16, Omega 0.20; prediction 80, actual 170, sigma 40 gives residual 2.25, degree 0.5, N 0.40, {D,S,U} 0.40, Omega 0.20.
+
+**With many features:** first combine the per-feature errors into one number (for example the average of the normalized errors, or a Mahalanobis-style distance); this choice is open and to be tested. Without fuzzy the same ramp is called a percentile mapping and the arithmetic is identical.
+
+**Will fuzzy plus the GRU work?** It runs and can work, but set expectations carefully:
+1. A ramp is a monotone transformation of the score, and ranking metrics such as AUROC ignore monotone changes; the clipping at the ends even creates ties (residuals of 3.5 and 5.0 give the same masses). So the benefit appears in fusion and calibration (masses that combine sensibly with EDL's), not in the viewer's own detection accuracy.
+2. The ramp endpoints decide everything: take them from percentiles of real normal residuals, never from simulator output (circularity).
+3. Bursty normal traffic produces large residuals and false "abnormal" claims; endpoints may be needed per device or per protocol.
+4. It cannot say which family: all the abnormal mass goes to {D,S,U}, the honest answer from a residual.
+5. How to find out: compare the fuzzy ramp against (a) a percentile mapping with no fuzzy wording (the same thing, so expect the same results) and (b) a plain logistic calibration; judge the fused belief's novelty AUROC, false-alarm rate and calibration. If they match, keep the simplest.
+
+### 87. Softmax, libraries, and where "importance" lives
+
+**Softmax is a small function, not a library or a valuation method:** it turns raw scores into percentages that add to 100% (a vote-share converter). Scores (2, 1, 0): e^2 = 7.39, e^1 = 2.72, e^0 = 1, sum 11.11, result (0.665, 0.245, 0.090). Weakness: it always adds up to 100%, so (10, 10, 10) and (0, 0, 0) both become (1/3, 1/3, 1/3); it cannot tell "lots of evidence, evenly split" from "no evidence". EDL replaces it with non-negative evidence outputs so that "no evidence" can exist.
+
+| Where softmax appears | Role |
+|---|---|
+| Inside a normal classifier (LightGBM, MLP) | turns scores into class probabilities |
+| As a cheap baseline viewer | the max probability becomes a novelty score (recipe 3, Section 60) |
+| In EDL | replaced by evidence outputs |
+| At the end of the PPO policy network | turns action scores into action probabilities (same function, different job) |
+
+**DS never uses softmax.** DS only multiplies and intersects masses. Softmax lives inside some viewers; it takes no part in the fusion or the trust. Libraries (PyTorch `torch.softmax`, SciPy `scipy.special.softmax`) only compute it.
+
+**Three separate steps (clearing the confusion about "importance"):**
+```
+Step 1: each viewer makes its claim (masses)       <- libraries and models work here
+Step 2: each claim is discounted by trust alpha     <- importance lives here
+Step 3: DS multiplies and intersects (the grid)     <- fusion; it has no notion of importance
+```
+Step 2 example: the MMPP says {D,S,U} 0.8, Omega 0.2; with trust alpha = 0.9: {D,S,U} = 0.9 x 0.8 = 0.72, Omega = 1 - 0.9 + 0.9 x 0.2 = 0.28 (sum 1.00). If the conversion recipe already contains a reliability rho, that is the trust; do not apply it twice.
+
+| Where | What | Tools |
+|---|---|---|
+| Inside a viewer (step 1) | train it, produce scores and probabilities | PyTorch (EDL, GRU), LightGBM or scikit-learn (classifiers), NumPy and SciPy for MMPP fitting (custom code expected; a ready library was not verified) |
+| Ready-made novelty scores (extra viewers) | produce a "how unfamiliar" score | pytorch-ood (detectors such as EnergyBased, MaxSoftmax, Mahalanobis, KNN, MC dropout); each score still needs a conversion recipe to masses |
+| Setting trust numbers (step 2) | measure reliability per viewer | scikit-learn `brier_score_loss`, `calibration_curve`, `roc_auc_score`, `CalibratedClassifierCV` (standard functions, not run here) |
+| Fusion (step 3) | the grid | your own code (a few dozen lines) |
+
+**Choosing the trust numbers (suggestion):** (1) measure each viewer on known validation data (accuracy, calibration, and on a separate tuning family how well it flags novelty); (2) turn the results into one alpha between 0 and 1 per viewer, tuned with the same budget for each; (3) never tune on the held-out attack, and check that the best value is not at the edge of the search grid; (4) trust may differ per protocol or environment, so check how it transfers.
+
+### 88. The states (frame) of the system: option C chosen
+
+**All viewers share one list of states, but each speaks at the resolution it can see** (a panel of witnesses describing the same suspects: one says only "tall or short", one says "I recognize him from the poster", one says "never seen him"). What a viewer cannot resolve goes on a group or on Omega, which is why DS handles groups.
+
+| Viewer | What it can say about the shared states |
+|---|---|
+| EDL | evidence for each known state (normal and each known family); no output for U |
+| GRU | only "normal" vs "not normal"; its claim sits on the group of all attack states plus U |
+| MMPP | how well the window fits each known class, and "nothing fits", which points at U |
+| DS result | masses over all states, groups and Omega |
+
+| Option | States | For | Against |
+|---|---|---|---|
+| A: coarse | {Normal, Known attack, Unknown} | tiny and cheap; a new family never changes the frame | EDL and MMPP lose per-family detail; no family-specific response; weaker "no poster matches" signal |
+| B: fine | Normal, DoS, DDoS, Mirai, Scan, ..., U (one per attack) | rich, family-specific responses | many rare classes (CICIoT2023 has 33 attacks and heavy imbalance), classes that overlap, more tuning |
+| **C: middle (chosen by the user and Claude)** | **Normal + one state per attack category + U** | **enough detail for the viewers and for response, manageable size; each category shares a similar pattern** | needs a design choice on how to group the attacks |
+
+**Decision (working, pending tests): option C.** For CICIoT2023 the 7 categories are, as far as I recall, DDoS, DoS, Recon, Web-based, Brute force, Spoofing and Mirai (verify), giving 9 states: Normal, those 7, and U. DS has up to 2^n groups (512 for 9 states), but in practice each viewer uses only a few (single states, the "abnormal" group, Omega), so the grid stays small. Option A can be run as a comparison arm in the offline test (Section 63), like F1 vs F2.
+
+### 89. Upgrading the frame when a new attack appears
+
+- **A new state is not added automatically.** The system never knows "this is a 0-day"; it only sees a lot of belief on U. A new wanted poster exists only once someone has studied the criminal.
+- **Upgrade cycle (suggestion, not an established procedure):** (1) U gets high belief, the agent responds gently and the windows are saved; (2) a person or an analysis confirms it is a real new attack family (it could be harmless); (3) the saved windows are labeled as a new family X; (4) the label-trained viewers are extended (EDL gets a new output and is retrained; the MMPP gets a new class model); (5) the frame becomes version 2 (the old states plus X); (6) the policy is updated and the update is tested in shadow mode before release.
+- **The GRU needs no change:** it was trained on normal traffic only and has no attack output. This is a real advantage of a normality model.
+- **Cost of adding a state:** the belief vector grows, the EDL output size changes, and the PPO policy input changes; a changed shape forces retraining. In federated learning, a frame change in one home but not another breaks the weight averaging.
+- **Two ways to soften it (suggestions):** (1) give the policy a fixed-size summary of the belief (total mass on Normal, on known attacks, on U, plus Omega and K), so adding a family does not change its input (price: family-specific actions are lost); (2) reserve spare "future family" slots with a presence flag, the same trick as the protocol-segment masks (Section 73), so the frame can grow without changing any shapes up to the reserved limit.
+- **Link to the hidden-family test:** hiding a family from training simulates the situation before X is added; a later experiment can add it and measure how fast the system adapts (future work).
+
+### 90. PPO recap (what works inside it)
+
+- **PPO is the coach**: it decides how the policy gets updated after each experience ("do more of what worked better than expected, but do not change too much at once"). It is not the thing that decides.
+- **What PPO trains** (standard PPO knowledge, to be covered properly in Session 2): the policy network (the actor) that picks the action, and a value network (the critic) that estimates how good the current situation is so PPO can tell whether an action did better than expected.
+
+| Part | Job | Frozen? |
+|---|---|---|
+| Viewers (EDL, GRU-viewer, MMPP) | turn a window into a claim | yes |
+| World model (GRU-wm + MMPP) | predicts and invents traffic for the model-based arm | yes (simplifying choice) |
+| Belief module (DS, k, conversion rules) | builds the belief | rules fixed beforehand |
+| Policy and value networks | decide and judge | no, PPO trains these |
+
+- The policy network can be feed-forward or contain a GRU or LSTM for memory (arm B, `RecurrentPPO`). The GRU appears in three roles: GRU-wm, GRU-viewer, GRU-policy (Section 74).
+- The agent sees the belief, the current window by protocol segment, its last action and context; it acts on the ladder (watch, rate-limit, temporary block, isolate and alert); it is scored by a reward that charges for missed attacks, for wrongly cut traffic and for heavy actions (acting pays off once the agent is more than about 70% sure in the example numbers, Section 78); it practices in an environment built from real data, because recorded traffic cannot react to actions.
+- BF-PPO is ordinary PPO with a belief as input (Le and Stadler, CAGE-2), which is our pattern with DS as the belief (Section 75). MAPPO and IPPO come later for Paper 3.
+
+### 91. Reference answers for pending checks (not answered by the user in the session)
+
+- Panel check: replacing the GRU by LightGBM loses the normality-model type (the main source of U); LightGBM plus EDL are both label-trained and learn from the same labels and features, so they are correlated and not both needed in the core panel.
+- Two-guards check: a new attack that fits no known poster but looks very odd is flagged by the normality model (Guard 2); the label-trained classifier (Guard 1) could only say "no match" or "I do not know".
+- Mixed-case check (GRU says normal, EDL says no poster, MMPP says nothing fits): the disagreement matters more; the GRU's {N} contradicts the MMPP's {U}, so K rises; read K and Omega, not the U mass alone; respond gently.
+- Frame-upgrade check: the GRU needs no retraining when a new family X is added because it is trained only on normal traffic and has no attack output; the EDL has one output per known class and is trained with labels, so a new family changes its output size and needs labeled examples (and the MMPP needs a new class model).
+- DS check from the Omega discussion: viewer 1 Omega = 1 and viewer 2 {D} 0.5, Omega 0.5 give K = 0 and viewer 2 unchanged.
+
+### 92. Open items, hypothesis flags and next steps
+
+**Decisions recorded today (working, pending tests):**
+1. Core viewer panel: EDL (known families), GRU residual (normality), MMPP (burst structure); other models as ablations (Section 84).
+2. Frame: option C (Normal + one state per attack category + U), with option A as a possible comparison arm (Section 88).
+3. Fusion: DS with Dempster and Yager both as arms; report K and the ignorance part separately before adding K to Omega.
+4. Viewer layer vs fusion layer are compared within their own layer (Section 83).
+5. Fuzzy only as an optional converter for number-output viewers (the GRU, scores); not for EDL.
+
+**Open items:**
+1. Define the category grouping for CICIoT2023 and verify the 7 categories.
+2. Define how per-feature GRU errors are combined into one residual; whether ramp endpoints are per device or per protocol.
+3. Measure the correlation between viewers on validation data (independence).
+4. Verify how Yager extends to three or more sources (all at once, total K added to Omega once).
+5. Add the learned-combiner baseline (for example logistic regression) and the percentile and logistic-calibration alternatives to fuzzy.
+6. How to set each viewer's trust number and whether it transfers to other datasets or protocols.
+7. Frame versioning: fixed-size belief summary vs spare slots; how federated averaging handles a frame change.
+8. Verify: the DA-DCC-IDS precedent; scikit-learn and pytorch-ood function names (not run); the MMPP fitting library (custom code expected).
+9. Hypothesis flags: the core panel, option C, the upgrade cycle, the learned-combiner arm and all conversion details are suggestions to test, not established methods.
+10. Carry forward all open items from earlier sections, including Section 92's predecessors (Sections 66 and 80), Section 44 (the CICIoT2023 DS run) and the paused topics (cheap baselines and conformal prediction, Sections 28 and 29).
+
+**Next steps:**
+1. Continue Session 1, Step 6 (when does an episode end, and what does the agent do when the belief says "something new"), then Steps 7 and 8.
+2. Code the belief module (viewers, recipes, DS fusion with both rules, temporal rule) and run the offline tests (F1 vs F2, option A vs C, fuzzy vs percentile vs logistic); the coding happens elsewhere using this md.
+
