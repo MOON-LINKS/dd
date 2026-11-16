@@ -4849,3 +4849,565 @@ Step 2 example: the MMPP says {D,S,U} 0.8, Omega 0.2; with trust alpha = 0.9: {D
 1. Continue Session 1, Step 6 (when does an episode end, and what does the agent do when the belief says "something new"), then Steps 7 and 8.
 2. Code the belief module (viewers, recipes, DS fusion with both rules, temporal rule) and run the offline tests (F1 vs F2, option A vs C, fuzzy vs percentile vs logistic); the coding happens elsewhere using this md.
 
+---
+
+## UPDATE — 16 November 2026 (new sections only; everything above is unchanged)
+
+Today: after the presentation, a recap of the PPO path, then clarifications on how the PPO arms are built and compared (axes, the G1 to G5 grid, what "belief in PPO" really means, which RNN, how the belief enters the policy, the model-based arm), then a deep-search novelty and venue check of the conference-paper idea, and what it changes in the plan. Sections 81 to 92 (12 November) stay as they are. Items marked (suggestion) are mine, not decisions. Items marked (verify) have not been checked against sources. Items marked (deep-search report) come from the report the user pasted from another AI model and were not verified by me; open every DOI and link before citing.
+
+### 93. Recap: the PPO path so far
+
+**Picture:** the agent is a guard in a POMDP. It cannot see the true state, so it keeps a belief (the notebook), reads the belief plus a few extras each step, picks a rung on an action ladder and receives a reward score. PPO is the coach that improves the guard's decision rule during practice. Practice happens in a simulated environment built from real data.
+
+| Session 1 step | Where we landed |
+|---|---|
+| 1. What is a POMDP | state hidden, observation = clue, belief = running guess, action = what it does; the agent acts on its belief |
+| 2. One step in time | window W and step Delta; start with Delta = W (no overlap) and sweep 1, 2, 5, 10 s; define memory in seconds and derive the keep factor k |
+| 3. What it sees | belief block, current window by protocol segment (presence masks), last action, context |
+| 4. What it can do | ladder: wait, rate-limit, temporary block, isolate and alert a human; start with "pick a rung" and mask rung 3 until rung 2; test "step up or down" as an arm |
+| 5. Reward | penalty for missed attack traffic, for legitimate traffic cut, and for heavy actions; the cost ratio sets how sure the agent must be before acting (about 70% in the example numbers) |
+| 6, 7, 8 | still to do: episode end and the U response; sanity checks (random, rule-based, oracle policies); one-page design document |
+
+**PPO-specific points:** PPO is the training method, not the decider; it trains in an environment, not directly on recorded data (recorded traffic cannot react to actions); it runs during training and upgrades, not in the live loop; use a library (Stable-Baselines3 PPO, sb3-contrib RecurrentPPO with an LSTM policy, MaskablePPO; CleanRL only to read and understand; multi-agent libraries only for Paper 3).
+
+| Part | Role | Trained by | Frozen? |
+|---|---|---|---|
+| Policy network (actor) | picks the action | PPO | No |
+| Value network (critic) | judges how good the situation is | PPO | No |
+| GRU-policy (optional) | memory inside the policy | PPO | No |
+| Viewers (EDL, GRU-viewer, MMPP) | produce claims | trained beforehand | Yes |
+| World model (GRU-world-model + MMPP) | invents traffic for the model-based arm | trained beforehand | Yes (simplifying choice) |
+| Belief module (DS, k, conversion rules) | builds the belief | fixed rules, tuned separately | Yes |
+
+**Suggested simulation order (to adjust):** (1) build the environment (replay or simulator traffic, action effects, reward); (2) sanity checks with a random policy, a hand-written rule policy and an oracle that sees the true state; (3) plain PPO; (4) add the belief, then recurrence; (5) the model-based arm and DQN; (6) sweeps (Delta, reward weights, action effects, held-out families).
+
+### 94. Choice axes, "arms", and the G1 to G5 grid
+
+**Picture:** designing one guard from independent decisions. An arm is one experimental setup (one option from each axis); arms are run and compared. An arm is neither a component inside one PPO nor a category chosen once. Some options stack (belief plus recurrent plus a mask in one agent); some are alternatives (feed-forward or recurrent, PPO or DQN).
+
+| Axis | Options | Plain meaning |
+|---|---|---|
+| Learning method | PPO or DQN | how the coach trains him |
+| What is on his desk (input) | window only, or window plus the belief | what he sees |
+| His memory | feed-forward or recurrent (GRU/LSTM) | what his brain is made of |
+| Where he practices | real or simulated traffic only, or also imagined traffic | model-free or model-based |
+| Rules of the job | no mask or an action mask | which actions are allowed |
+| Team size | one agent or several (IPPO, MAPPO) | Papers 2 and 3 |
+
+**Belief PPO vs normal PPO:** the PPO algorithm is identical; only the input is wider (belief block added) and the environment must compute the belief at every step. Recurrent PPO (memory of the past) and model-based PPO (imagination of the future) are independent, giving a 2x2 grid; they are not the same thing.
+
+**The grid (the user's three arms plus the missing baseline):**
+
+| | No belief | With belief |
+|---|---|---|
+| Feed-forward policy | G1 (the missing baseline: window features and last action only, the "pretend it is an MDP" arm) | G3 |
+| Recurrent policy | G2 | G4 |
+
+G1 is the old arm A and G2 the old arm B. The old arms C (GRU residual as an input to plain PPO), D (model-based practice) and E (DQN) stay as extras after the core grid.
+
+**What each comparison answers:**
+
+| Compare | Isolates | Question |
+|---|---|---|
+| G1 vs G2 | memory, no belief | does a recurrent brain help when there is no notebook? |
+| G1 vs G3 | belief, no memory | does the DS notebook help a policy without memory? |
+| G2 vs G4 | belief, memory fixed | does the belief add anything on top of a recurrent brain? |
+| G3 vs G4 | memory, belief fixed | does recurrence add anything on top of the belief? |
+
+Hypothesis (to test): memory helps a lot without the belief and much less with it, because the belief already carries memory. If G4 is about G3 is about G2, a simpler agent is enough, and that is a valid result.
+
+**G5, the control (suggestion):** same viewers as G3, but their raw outputs are stacked as policy input with no DS fusion. G3 vs G5 tests whether DS fusion itself helps; G1 vs G5 tests whether the extra pretrained viewer outputs help at all. Without G5 the claim "the belief helps" is confounded (the gain may come from pretrained features, not from fusion). **G6 (suggestion):** G5 plus a recurrent policy, to complete the factorial.
+
+| Arm | Policy input beyond window features and last action |
+|---|---|
+| G1 | nothing |
+| G5 | the viewers' raw outputs stacked (EDL (b, u), GRU residual, MMPP fits); no DS fusion, no K, no memory rule |
+| G3 | the fused DS belief |
+
+**Fairness rules:** the POMDP (environment, reward, ladder, step size, episode rules) is identical in every arm and frozen before comparing, never adjusted to favor one arm; identical raw information, training budget and tuning budget; several seeds with mean and spread; held-out attack families and real data for evaluation. The belief arms receive the belief plus the raw window features by default; "belief only" can be an ablation.
+
+**Check answers:** the two comparisons isolating the belief with memory held fixed are G1 vs G3 and G2 vs G4; G3 vs G5 tests DS fusion itself; G1 vs G5 tests the extra pretrained viewers.
+
+### 95. What "belief in PPO" means (clarified after confusion)
+
+**Direct answer: there is no belief model inside PPO.** PPO contains only a policy network and a value network. The belief is computed outside PPO by the viewers and DS fusion and handed to the policy as extra input numbers. The policy learns how to react to those numbers.
+
+**Picture (manager and morning report):** a shop manager decides each morning (do nothing, call a technician, close a machine). The viewers are three specialists who inspect the shop; DS is the committee that merges their notes into one summary sheet (the belief); the policy is the manager who reads the sheet; PPO is his boss giving feedback after each decision. The boss trains the manager; the boss does not write the sheet or change how the committee works.
+
+**One step with numbers (illustrative):** EDL says "no known attack matches", the GRU says "traffic is odd", the MMPP says "nothing I know explains the timing". DS merges them into Normal 0.15, Known attack 0.20, U 0.45, Omega 0.20, K = 0.05. These go into the policy with the raw window features and the last action. The policy outputs wait 0.10, rate-limit 0.60, block 0.25, isolate 0.05 and picks rate-limit; a reward arrives and PPO nudges the policy weights. The policy has learned a rule like "much mass on U and some Omega means take the cheap, reversible step".
+
+| Changed by PPO | Never changed by PPO |
+|---|---|
+| the policy's weights | the viewers |
+| the value network's weights | the DS rules and the memory rule |
+
+**The three managers:** G1 receives only raw traffic numbers (no specialists); G5 receives three separate notes and must combine them in its own head (learned); G3 receives one merged sheet from the committee.
+
+**Three different things share the word "belief":**
+
+| # | What | Where | Made by |
+|---|---|---|---|
+| 1 | the theoretical POMDP belief (the ideal distribution over the hidden state given all history) | math on paper | not computed exactly in practice |
+| 2 | our DS belief module (masses from frozen viewers, fusion, carry-forward rule) | the agent's perception, outside PPO | hand-designed and tuned beforehand |
+| 3 | the recurrent hidden state | inside the policy | learned by PPO (implicit, unreadable) |
+
+G3: PPO has no belief model of its own; it reads the DS numbers. G2: the only belief-like object is the hidden state. G4: both exist and are different objects. The POMDP environment has no belief at all (it holds the true hidden state, which the simulator knows and never gives to the agent). Rules: the belief module may read only observations (windows), never the true state (only the oracle baseline reads it); the identical belief code must run in training and deployment.
+
+**The worry "PPO learns once, offline, so it is bad practice":** offline training fixes the policy's weights (its habits), not the beliefs or inputs. At every live step the frozen viewers run on the new window, the DS belief updates, and a recurrent policy's hidden state changes; the manager reads a fresh report every morning. G5 is therefore not bad practice (feeding pretrained features to a policy is a common design); its job here is to be the control.
+
+**Why the viewers and DS module are frozen during PPO training:** if the committee changed its report format while the manager was learning, the same numbers would mean different things from week to week and the policy could never settle on a rule (the policy chases a moving input). Check answer: in G5 the policy network itself does the merging (it must learn the combination), so G3 vs G5 measures whether the hand-designed DS fusion helps beyond letting the policy learn the combination.
+
+**"If PPO does not change the belief models, did we do nothing?"** No: PPO learns to use the belief (altimeter picture: the pilot does not rebuild the altimeter in flight but learns to fly with its readings). Whether the dashboard helps is exactly what G1 vs G3 measures; if G1 matches, the belief adds nothing, and that is a valid result. Training everything jointly is possible but harder to control; keep it as a later option.
+
+### 96. Which RNN, how the belief enters the policy, which viewers
+
+**LSTM or GRU for the recurrent policy (suggestion):**
+
+| | LSTM | GRU |
+|---|---|---|
+| Parameters at the same size | 4 weight blocks | 3 weight blocks (about 25% fewer; general knowledge, not tested) |
+| Typical quality | usually comparable | usually comparable |
+| Library support | sb3-contrib `RecurrentPPO` is PPO with an LSTM policy ("MlpLstmPolicy") | not seen in that library; custom code, or adapt CleanRL's `ppo_atari_lstm.py` (verify) |
+| Fit for a hub | heavier | lighter |
+
+Plan: start with the LSTM (library-supported, defensible as a standard implementation), run a GRU as a small ablation of G2 and G4 (hub-cost argument), skip Transformers and state-space models (heavy, episodes are short). Hidden size 32 to 128 as a first range to tune. Practical details of recurrent PPO: pass the saved state and an episode-start flag to `predict()` so the hidden state resets at episode boundaries; training batches keep steps in order inside an episode. The GRU inside the policy (GRU-policy) is a different network from the viewer GRU and the world-model GRU; name them separately.
+
+**Belief block options (what the policy receives):**
+
+| Option | Contents | Size | Notes |
+|---|---|---|---|
+| Full mass vector | masses on Normal + 7 categories + U (9), the "abnormal" group, Omega, K | 12 | suggested; keeps groups and conflict |
+| Pignistic summary | 9 decision probabilities, Omega, K | 11 | loses group information |
+| Fixed-size summary | mass on Normal, on known attacks (total), on U, Omega, K | 5 | unchanged when a new family is added |
+| Full vector plus each viewer's own masses | the full vector plus every viewer's claim | grows with viewers | see below |
+
+```
+[ belief block, 12 numbers ]   masses on Normal + 7 categories + U (9),
+                               the "abnormal" group, Omega, K
+[ window block ]               traffic features by protocol segment, presence masks
+[ last-action block ]          which rung, and how long ago
+[ context block ]              device type and so on
+```
+Actor and critic read the same observation in the standard setup. Memory placement: in G3 the memory is only in the belief's fading rule; in G4 memory exists in two places (belief and RNN), so G4 is expected to gain little over G3 (hypothesis).
+
+**Three viewers in the policy: two ways.** Fused first (the main design): one DS belief block, fixed size however many viewers, adding a viewer changes no shape, the policy cannot re-weight viewers itself. Raw viewers stacked (G5): the network learns its own weighting, the size grows with the viewers, and the input breaks if a viewer is swapped.
+
+### 97. The model-based arm: world model vs viewer
+
+- "Model-based PPO" and "MBRL" are the same arm. The viewer GRU and the world-model GRU have different jobs:
+
+| | GRU-viewer | GRU-world-model |
+|---|---|---|
+| Trained on | normal traffic only | traffic including attacks |
+| Inputs | past windows | past windows plus the action taken |
+| Output | forecast used as a residual signal | next window after the action, used to invent episodes |
+| Why | tells "is this normal" | the agent must learn "what happens if I throttle" |
+
+The world model needs the action as an input and attack traffic in training, so it cannot be the viewer GRU reused as it is; they may share an architecture or starting weights, but keep them as separate networks, trained before PPO and then frozen.
+- **Limit:** CICIoT2023 is a passive recording (no defender ever throttled or blocked anything), so the real effect of an action cannot be learned from it. Action effects are hand-written assumptions (for example "a rate-limit halves the rate"); a world model trained on a simulator with those effects only learns the assumptions back. What it can learn from real data is the traffic dynamics (burst patterns). This is another reason the model-based arm may not pay off, and why the old arm C (GRU residual as a feature, no imagination) is the important ablation.
+- The MMPP can serve both as a scorer and as a generator, but sharing it creates circularity (imagined traffic always looks natural to a viewer built from the same model); give imagined traffic its own generator where possible.
+- **Check answers:** (a) the GRU inside the policy is on the memory axis, (b) the GRU that invents traffic is on the "where he practices" axis, (c) the belief block is on the "what is on his desk" axis. A world model needs (1) the action as an input and (2) training on traffic that includes attacks; the action effect cannot be learned from CICIoT2023 because the recording is passive.
+
+### 98. The conference-paper idea and the deep-search prompt
+
+**Idea:** a controlled comparative study (mathematical and simulated) of PPO agents (G1 to G5) in an IoT-defense POMDP, with a Dempster-Shafer (Dempster and Yager) fused belief from several frozen viewers, an explicit unknown-attack state, Omega and K, a graded action ladder, and held-out-family evaluation on CICIoT2023 (plus cross-dataset tests); metrics: novelty AUROC, false-alarm rate at a fixed detection rate, known-class accuracy, cost.
+
+**Prompt sent to the deep-search model (condensed record):** role = critical novelty and venue checker, never invent citations, state read level (full text, abstract, snippet) for every paper. Questions: (1) prior controlled comparisons of recurrent vs belief-input PPO in cyber-defense POMDPs, plus the general POMDP-RL literature (for example Ni et al., ICML 2022); (2) Dempster-Shafer, Yager, subjective logic or evidential deep learning used as an RL belief or observation, including "evidential POMDP" and "belief function POMDP"; (3) explicit unknown or novel-attack state plus RL response policy (BF-PPO, Hammar and Stadler, Q-BIRD, FedAtten-DRL, Siamese+PPO, IoTHaven, CyDER 2.0, DQN-IDS, DeepStage, H-MARL); (4) graded response ladders learned by RL; (5) whether the stacked-viewers-vs-fused-belief control (G5 vs G3) is a known design; (6) a novelty verdict split into comparison design, evidential belief, and evaluation protocol. Search protocol: IEEE Xplore, ACM DL, Scopus, Web of Science, arXiv, Semantic Scholar, Google Scholar, DBLP; 2018 to 2026; boolean combinations of POMDP, PPO, recurrent, belief, Dempster-Shafer, evidential, intrusion, IoT, zero-day; snowballing; list the exact queries. Output: table of the 15 closest papers, verdicts with evidence and "do not claim" list, at least 8 reviewer attacks, differentiators and a minimal extra-experiment list, 6 target venues with deadlines (flag unverified), and the least-sure claims.
+
+### 99. Deep-search results (report pasted by the user; not verified by me)
+
+**Bottom line (deep-search report):** in its current framing the paper is borderline for a workshop or a second-tier conference. The controlled comparison has been partly done in cyber defense; held-out families on CICIoT2023 have been published; the one defensible contribution is the specific combination: a Dempster/Yager-fused, multi-viewer evidential belief with an explicit unknown-attack state, ignorance mass Omega and conflict K, fed to a PPO response policy for IoT. Publishable only if framed as "does evidential fusion add value beyond memory and beyond its raw inputs, and when?", with a closed-loop environment and a non-RL threshold baseline.
+
+**Search coverage (the report's own honesty statement):** 15 successful general web searches (arXiv, IEEE, ACM, Springer, Elsevier, MDPI, Semantic Scholar pages) plus one sub-agent for venue CFPs; no access to IEEE Xplore advanced search, Scopus, Web of Science, Google Scholar or DBLP query interfaces; three searches failed; the stopping rule was not reached. Every "not found" means "not found in a limited search". Under-searched: subjective-logic-state RL, "evidential POMDP" as a formal term, leave-one-family-out on CICIoT2023.
+
+**Verdicts:**
+- (a) Comparison design: low to moderate novelty. Q-BIRD already compares PPO without belief, PPO-LSTM, DRQN and PPO with Bayesian belief; Believer (ICML 2023), a 2024 railway-maintenance Machine Learning paper and Ni et al. (ICML 2022) do belief vs recurrent in general RL. Possibly new: the full factorial including G4 and the G5 control, and the interaction effect (does belief help only without memory?). Enough for a workshop, not alone for a main-track security conference.
+- (b) Evidential belief for POMDP RL in IoT defense: moderate novelty, the best card, but no "first". Close neighbours: SHIELD (evidential vacuity driving intrusion detection and escalation) and a vehicular reputation paper using DS-combined evidence as a DRL state.
+- (c) Evaluation protocol: low novelty, high validity risk. Held-out classes on CIC-IoT-2023 (OpenTriIDS), family-held-out RL zero-day (DQN-IDS), cross-dataset zero-day with PPO (Siamese+PPO). The critical flaw: CICIoT2023 is a static flow dataset, so response actions do not change future observations unless a simulator is built; without one the "POMDP" is a contextual bandit or detection problem and the memory-vs-belief question loses its meaning. Expect this to be the main reviewer attack (this matches our Session 1 priority: the environment comes first).
+
+**The 15 closest papers (condensed; all from the report; verify):**
+
+| # | Paper | Relevance | Gap versus this plan |
+|---|---|---|---|
+| 1 | Q-BIRD, Shah et al., arXiv 2606.07796 (2026 preprint) | PPO with belief over attacker intent; baselines no belief, PPO-LSTM, DRQN, Bayesian belief; 10 seeds; graded actions; cost-aware | no recurrent+belief arm (the report read only part of the paper), no G5, no evidential fusion, no Omega or K, V2X not dataset zero-day |
+| 2 | DeepStage, Phan et al., arXiv 2603.16969 (2026) | LSTM stage estimator and LSTM belief encoder feeding hierarchical PPO (a G4-type agent); APT | no ablation grid, not IoT, no DS |
+| 3 | BF-PPO, Le and Stadler, CNSM 2025 (arXiv 2509.06539) | PPO plus particle-filter belief on CAGE-2 (G3-type) | exact model, no memory comparison, not IoT, no unknown class |
+| 4 | Hammar and Stadler, Intrusion Prevention through Optimal Stopping, IEEE TNSM 2022 | Bayesian belief, threshold structure | binary intrusion state, theory-driven |
+| 5 | Hammar and Stadler, Learning Near-Optimal Intrusion Responses Against Dynamic Attackers, IEEE TNSM 2023 | game-theoretic belief | rigorous POMDP standard reviewers will cite |
+| 6 | Ni, Eysenbach, Salakhutdinov, ICML 2022 (PMLR 162) | recurrent model-free RL matches specialized methods on 18 of 21 environments | sets the bar for G2 (careful tuning) |
+| 7 | Believer, ICML 2023 (PMLR 202) | learned belief vs recurrent PPO baseline | general POMDP |
+| 8 | Railway maintenance, Machine Learning (Springer) 2024 | belief-input beat LSTM and Transformer agents | general precedent for G2 vs G3 |
+| 9 | SHIELD, Wasif et al., USENIX VehicleSec 2026 | evidential vacuity drives trust, intrusion detection and human escalation; over 80% compromised agents detected at under 15% false positives | no DS fusion of several viewers, not IoT traffic; its RL role not confirmed |
+| 10 | DRL dynamic reputation policy in 5G vehicular networks (IEEE Xplore 9428520) | DS-combined feedback as the DRL state | venue and year not confirmed |
+| 11 | IoTHaven, Alam, Rahman, Wang (2024) | POMDP with DRQN in trigger-action IoT (G2-type) | no belief comparison; venue not verified |
+| 12 | Siamese+PPO zero-day IDS, ICT Express 12:752-757, 2026 (arXiv 2609.26115) | cross-dataset zero-day, PPO/DQN/SAC | no POMDP belief, no memory ablation |
+| 13 | DQN-IDS, Alkasassbeh et al. (IEEE Xplore 11192261, about Jan 2025) | whole ransomware families held out (UGRansome) | precedent for family-held-out RL evaluation |
+| 14 | H-MARL on CAGE-4, AAMAS 2025 | field standard is a simulator closed loop | not IoT |
+| 15 | OpenTriIDS, Sensors 26(20):6369, 2026 | held-out classes on Edge-IIoTset and CIC-IoT-2023 | no RL; precedent for the protocol |
+
+**Graded response ladders already exist (do not claim novelty):** Q-BIRD (monitor, alert, throttle, isolate), FedTrans-AgriIDS (Springer Discover AI 2026, MAPPO; five rungs almost identical to this ladder), an SDN-IoT two-timescale RL paper with LLM governance (arXiv 2604.01127), DeepEdgeIDS (arXiv 2511.18240), DeepStage, DeepAir (IEEE TNSM 2022), CAGE action spaces.
+
+**G5 vs G3:** concatenation vs DS fusion comparisons are standard in supervised multimodal learning (for example a KAIS 2024 EDL/DS late-fusion paper); not found in RL security. Present G5 as rigor, not novelty.
+
+**Claims NOT to make:** first PPO/DRL agent for POMDP-based IoT or network defense; first comparison of recurrent vs belief-input PPO in cyber defense; first to show recurrent model-free RL is a strong POMDP baseline; first belief-state PPO for cyber defense; first learned graded response actions; first use of Dempster-Shafer in intrusion detection; first evidential or subjective-logic uncertainty driving RL security response; first family-held-out or open-set evaluation on CICIoT2023; first RL zero-day IoT defense with cross-dataset tests. **Safer wording (still hedged):** "to our knowledge, the first controlled study of whether Dempster-Shafer-fused evidential beliefs with explicit ignorance and conflict add value over memory and over unfused inputs for PPO-based IoT response".
+
+**Likely reviewer attacks (12):** (1) not a POMDP, actions do not affect observations (static replay); (2) the memory-vs-belief comparison is already done (Q-BIRD, railway paper, Believer); (3) the recurrent baseline is under-tuned (Ni et al.; equal tuning budget and context-length sweeps); (4) why DS and not a Bayesian or particle-filter belief (and Dempster's rule under high conflict is counter-intuitive); (5) gains come from extra pretrained features, not fusion (G5 helps, plus "G5 + memory" and "EDL alone" arms); (6) the unknown-attack signal is just an OOD detector and RL adds nothing (must beat a non-RL threshold policy on m(U), Omega, K); (7) graded response is not new; (8) the zero-day protocol is standard and held-out variants may be near-duplicates (held-out families must be semantically distinct); (9) the cost function is arbitrary (sensitivity analysis); (10) statistical rigor (Q-BIRD used 10 seeds by 80 test episodes); (11) frozen viewers leak test information if trained on overlapping data; (12) cross-dataset feature mismatch.
+
+**Differentiators to emphasize:** the interaction effect (does belief help only without memory?); an uncertainty decomposition the policy can use (Omega vs K vs m(U)) with causal ablations that zero Omega or K at test time; Dempster vs Yager under conflict (Yager should give more conservative actions on novel traffic).
+
+**Minimal extra experiments:** (1) a closed-loop environment where actions modify subsequent flows, parameterized from CICIoT2023 statistics (otherwise drop the "POMDP" framing); (2) a non-RL threshold baseline on m(U), Omega and K mapped to the ladder; (3) a Bayesian-fusion arm (product of experts or a calibrated ensemble) and a learned-fusion arm (small MLP over viewer outputs); (4) G6 (stacked raw outputs into an LSTM policy); (5) an oracle-belief upper bound and an asymmetric-critic variant; (6) equal-budget hyperparameter search for all arms, at least 10 seeds, interquartile-mean and bootstrap confidence intervals; (7) a leave-one-family-out rotation over all CICIoT2023 families plus one cross-dataset test with a documented feature mapping (CIC IoT-DIAD 2024 or Edge-IIoTset); (8) binary-block vs ladder ablation; (9) action-cost sensitivity sweep; (10) calibration of Omega (does it rise on held-out families?), with reliability diagrams for the EDL viewer.
+
+**Target venues (deadlines per the report, unverified by me; today is 16 November 2026):**
+
+| Venue | Fit | Deadline per report | Status |
+|---|---|---|---|
+| IEEE/IFIP NOMS 2027 (Montreal, 10 to 14 May 2027) | network management, RL for security | 30 Nov 2026 per the official homepage (aggregators still list 9 Nov, already passed) | confirm on the official CFP; page limits secondhand (8 pp full, up to 12) |
+| IEEE WoWMoM 2027 (Irvine, 21 to 24 Jun 2027) | IoT, wireless security | 1 Dec 2026 | secondhand; official page unverified |
+| IEEE EuroS&P 2027 workshops | security workshops | per-workshop, about late Feb or early Mar 2027 | exact dates not yet published |
+| ACM AISec (CCS workshop) | best thematic fit (ML and security) | 2027 date unverified (2026 edition was 24 Jul 2026) | expect mid-2027 |
+| IFIP/IEEE CNSM | venue of BF-PPO and Hammar and Stadler work | 2027 unverified (2026 edition was 29 Jun 2026) | expect mid-2027 |
+| IEEE CNS | network security | 2027 unverified | |
+
+My assessment (suggestion): the closed-loop environment is not built yet (Session 1 is unfinished), so a 30 Nov 2026 or 1 Dec 2026 deadline is not realistic; AISec 2027 or CNSM 2027 (audiences that understand POMDP framing) give time to run the extra experiments. The report itself conditions NOMS or WoWMoM on the simulator being ready within about two weeks.
+
+**Least-sure claims in the report (its own list):** that Q-BIRD has no recurrent+belief arm (partial read); that BF-PPO has no recurrent component (abstract and intro only); the NOMS 2027 deadline; SHIELD's RL role; the vehicular DS+DRL paper's venue and year; Siamese+PPO dataset names; venue and year of DQN-IDS, FedAtten-DRL and IoTHaven; that no "evidential POMDP" or subjective-logic-state RL paper exists (the relevant query failed); that the railway paper's "belief-input wins" generalizes; WoWMoM and WiSec dates.
+
+**Corrections to earlier notes from the report:**
+1. **CyDER 2.0 is a cyber-range simulator, not a defense algorithm.** In the cited multi-agent framework (Scientific Reports 2026, s41598-026-45937-9) the attackers use DQN and the defenders use anomaly detection plus rules. Earlier tables (Section 1 novelty check and the closest-ten table) listed it as "RL + anomaly detection, defender framed as a POMDP"; do not cite it as an RL defender (verify).
+2. BF-PPO is confirmed as Le and Stadler, CNSM 2025 (arXiv 2509.06539), consistent with Section 75.
+3. FedAtten-DRL is RL used as a detector (classification as RL), not a responder.
+4. Q-BIRD is a 2026 preprint; peer-reviewed venue not verified.
+
+### 100. What changes in the plan
+
+1. **Reframe the paper question:** "does evidential fusion add value beyond memory and beyond its raw inputs, and when?", including the interaction effect (G2 vs G4, G1 vs G3).
+2. **The closed-loop environment is mandatory** (actions must modify subsequent traffic); it was already the top priority of Session 1 and now also decides whether the conference paper exists. Parameterize it from CICIoT2023 statistics and document the action-effect assumptions.
+3. **Extend the arm list:** G1 to G5 plus G6; the old extras (GRU-residual feature, model-based, DQN); a non-RL threshold baseline on m(U), Omega, K; Bayesian-fusion and learned-fusion arms; oracle-belief upper bound; optional asymmetric critic; binary-block vs ladder; cost sensitivity.
+4. **Rigor:** equal tuning budget with a strong G2 (context-length and architecture sweeps), at least 10 seeds, bootstrap intervals, leave-one-family-out rotation with semantically distinct families, viewers trained without the held-out families, a cross-dataset test with a documented feature mapping.
+5. **Mechanism tests:** zero Omega or K at test time; Dempster vs Yager.
+6. **Claims discipline:** use the safer wording above; no "first" claims.
+7. **Run the real database sweep** (Scopus, IEEE Xplore, ACM, Web of Science), especially "evidential POMDP", belief-function or subjective-logic states in RL, and leave-one-family-out on CICIoT2023; open and verify every DOI and link in Section 99.
+
+### 101. Open items and next steps
+
+**Open items:**
+1. Session 1 Steps 6, 7, 8 (episode end and the U response; sanity-check baselines; one-page design document).
+2. Decisions from Section 68 (window, action list, reward weights, U response, episode length); the environment's action-effect numbers, device-selection rule and per-protocol mapping.
+3. Questions still open to the user: RL background; window and overlap in the CICIoT2023 run (and whether windows are time-ordered per device); which actions a real hub or operator can take; the user's CICIoT2023 DS run details (Section 44).
+4. Verify: every paper, link and deadline in Section 99; the "recurrent is strong" and "belief wins" claims (general POMDP RL); GRU-vs-LSTM parameter claims; library behavior with a custom belief input.
+5. Decide whether the conference paper is planned for AISec 2027 or CNSM 2027, or a workshop first; talk to the supervisor before committing to a deadline.
+6. A note the user started to add at the end of the message ("note that:") was not received; add it here when provided.
+7. Paused from before: cheap baselines and conformal prediction (Sections 28 and 29).
+8. Carry forward all open items from earlier sections, including Sections 66, 80 and 92.
+
+for conference paper idea:
+# Novelty and Venue Check: Belief-Input vs Recurrent PPO with Evidential (Dempster–Shafer) Beliefs for IoT Defense
+
+**Bottom line: in its current framing, the paper is a borderline workshop or second-tier conference paper.** Its controlled 2×2+1 comparison has already been partly done in cyber defense: a 2026 V2X preprint (Q-BIRD) compares PPO without belief, PPO-LSTM, DRQN and PPO with a Bayesian belief. The idea of using CICIoT2023 with held-out attack families to simulate zero-days has also been published. The one contribution that still looks defensible is the specific one: a Dempster–Shafer/Yager-fused, multi-viewer evidential belief, with an explicit unknown-attack state, ignorance mass Ω and conflict K, fed to a PPO response policy for IoT. Even that has close neighbours: evidential (Dirichlet) uncertainty already drives intrusion response and escalation in a 2026 USENIX VehicleSec paper (SHIELD), and Dempster–Shafer-fused evidence has been used as a DRL state in vehicular reputation management. The paper is publishable only if it is framed as "does evidential fusion add value beyond memory and beyond its raw inputs, and when?". It also needs a closed-loop environment and a non-RL threshold baseline.
+
+## TL;DR
+- **(a) The comparison design is not novel as a concept.** Recurrent-vs-belief-input studies exist in general POMDP RL (Ni et al., ICML 2022; the "Believer" paper, ICML 2023; a 2024 *Machine Learning* journal paper on railway maintenance) and in cyber defense (Q-BIRD 2026, DeepStage 2026, BF-PPO at CNSM 2025). The only plausibly new elements are the full factorial including G4 (recurrent + belief) and the G5 "stacked raw viewer outputs" control. I found no RL-for-security paper with a G5-style control, but my search was not exhaustive.
+- **(b) The evidential belief for POMDP RL in IoT defense is the strongest novelty claim, but you cannot say "first".** I found no paper that feeds Dempster/Yager-combined mass functions with an explicit unknown-attack hypothesis, Ω and K into a PPO response policy on IoT traffic. Two close precedents exist. SHIELD (Wasif et al., USENIX VehicleSec 2026) uses evidential vacuity to drive intrusion detection and human escalation. "Deep Reinforcement Learning Based Dynamic Reputation Policy in 5G Based Vehicular Communication Networks" (IEEE) uses DS-combined evidence as a DRL state.
+- **(c) The evaluation protocol is not novel, and it carries a serious validity risk.** Held-out-class open-set evaluation on CIC-IoT-2023 (OpenTriIDS, *Sensors* 2026), family-held-out zero-day RL-IDS evaluation (the DQN-IDS on UGRansome) and cross-dataset zero-day RL (Siamese+PPO) all exist. The bigger problem is that CICIoT2023 is a static flow dataset, so response actions cannot change future observations unless you build a simulator. Expect this to be the main reviewer attack.
+
+## Key Findings
+
+### What the search actually covered (honesty statement)
+- **The full requested protocol was not executed.**
+  - I had no access to IEEE Xplore advanced search, Scopus or Web of Science boolean interfaces, Google Scholar or DBLP query interfaces.
+  - I ran 15 successful web searches over general web indexes covering arXiv, IEEE, ACM, Springer, Elsevier, MDPI and Semantic Scholar pages. Three more searches failed because the tool budget ran out.
+  - One research sub-agent ran separately and verified venue CFPs.
+  - Snowballing was partial: I read references only inside the pages I opened. The stopping rule ("two consecutive rounds with no new relevant paper") was **not** reached; new relevant papers were still appearing in the last rounds.
+- **Treat every "no prior work found" statement below as "not found in a limited search", not as proof of absence.**
+- **Exact queries executed (successful):**
+  1. `Le Stadler belief-free PPO CAGE-2 partially observable cyber defense`
+  2. `Recurrent Model-Free RL Can Be a Strong Baseline for Many POMDPs Ni ICML 2022`
+  3. `Hammar Stadler intrusion prevention POMDP optimal stopping`
+  4. `Dempster-Shafer belief state reinforcement learning intrusion response`
+  5. `evidential deep learning reinforcement learning uncertainty subjective logic policy`
+  6. `"belief function" POMDP evidential Dempster-Shafer partially observable`
+  7. `evidential deep learning intrusion detection unknown attacks open-set CICIoT2023`
+  8. `Q-BIRD V2X intrusion response reinforcement learning zero-day`
+  9. `IoTHaven reinforcement learning IoT defense`
+  10. `FedAtten-DRL federated attention deep reinforcement learning intrusion`
+  11. `CyDER 2.0 cyber defense reinforcement learning`
+  12. `DeepStage APT stage reinforcement learning defense`
+  13. `hierarchical multi-agent reinforcement learning CAGE-4 cyber network defense`
+  14. `belief state input vs recurrent policy model-free RL comparison partially observable`
+  15. `reinforcement learning IoT SDN mitigation rate limiting quarantine isolate graded response actions`
+  16. `Dempster-Shafer fusion state representation deep reinforcement learning agent`
+  17. `"evidential" reinforcement learning intrusion response uncertainty unknown attack policy`
+  18. `DeepAir deep reinforcement learning adaptive intrusion response software-defined networks Phan Bauschert`
+- **Queries that failed (budget exhausted, no results):**
+  - `subjective logic opinion state reinforcement learning agent uncertainty-aware decision POMDP`
+  - `CICIoT2023 leave-one-attack-family-out zero-day evaluation`
+  - `IEEE NOMS 2027 call for papers deadline`
+- **Coverage gaps:** subjective-logic-state RL, "evidential POMDP" as a formal term, and leave-one-family-out on CICIoT2023 specifically were **under-searched**. Run these yourself on Scopus/IEEE Xplore before submission.
+
+### Verification of the works you named
+- **Ni, Eysenbach, Salakhutdinov — VERIFIED.**
+  - Title: "Recurrent Model-Free RL Can Be a Strong Baseline for Many POMDPs", ICML 2022, PMLR vol. 162, pp. 16691–16723 (arXiv:2110.05038).
+  - Key result: with careful architecture and hyperparameter choices, recurrent model-free RL matched or beat six specialized methods on 18 of 21 environments.
+- **BF-PPO — VERIFIED.**
+  - Le and Stadler, "Learning Optimal Defender Strategies for CAGE-2 using a POMDP Model", accepted at CNSM 2025 (arXiv:2509.06539).
+  - Method: PPO plus a particle-filter belief. It is compared against CARDIFF, the top method on the CAGE-2 leaderboard.
+- **Hammar and Stadler — VERIFIED (several papers):**
+  - "Learning Intrusion Prevention Policies through Optimal Stopping", CNSM 2021.
+  - "Intrusion Prevention through Optimal Stopping", IEEE TNSM 19(3):2333–2348, 2022 (arXiv:2111.00289).
+  - "Learning Near-Optimal Intrusion Responses Against Dynamic Attackers", IEEE TNSM 2023, DOI 10.1109/TNSM.2023.3293413.
+  - "Scalable Learning of Intrusion Response through Recursive Decomposition" (arXiv:2309.03292).
+  - Hammar, Dhir and Stadler, C-POMCP for CAGE-2 (arXiv:2407.11070).
+- **Q-BIRD — VERIFIED.** Shah et al., "Amplitude-Belief Reinforcement Learning for Adaptive Cyber Defense in Partially Observable V2X Networks", arXiv:2606.07796 (2026 preprint; peer-reviewed venue not verified).
+- **FedAtten-DRL — VERIFIED.**
+  - Title: "A Federated Learning Framework with Self-Attention and Deep Reinforcement Learning for IoT Intrusion Detection", ACM, DOI 10.1145/3708635.3708649. I did not verify the proceedings name or year.
+  - Method: PPO + multi-head attention + federated learning. RL is used as a **detector** (classification as RL), not a responder.
+- **Siamese+PPO zero-day IDS — VERIFIED.**
+  - Title: "A cross-dataset based zero-day intrusion detection system by integrating siamese network and reinforcement learning", by Hossain, Turja, Tasnim, Juboraj and Hossain, *ICT Express* 2026, vol. 12, pp. 752–757 (ScienceDirect pii S2405959526000731). The bibliographic details come from a citation in MDPI *Computers* (doi 10.3390/computers15090599). A preprint version is arXiv:2609.26115.
+  - Reported results: 93.94% zero-day detection ratio and a 2.21% false-positive rate. PPO, DQN and SAC were all evaluated.
+- **IoTHaven — VERIFIED as a paper; venue not verified.**
+  - Alam, Rahman and Wang, "IoTHaven: An Online Defense System to Mitigate Remote Injection Attacks in Trigger-action IoT Platforms" (2024, Semantic Scholar record).
+  - Method: POMDP with a DRQN/LSTM function approximator, applied to trigger-action IoT.
+- **CyDER 2.0 — MIS-CHARACTERIZED in your list.**
+  - CyDER 2.0 is an open-source cloud cyber-range **simulator**, not a defense algorithm.
+  - The relevant paper is "Artificial intelligence driven multi agent framework for adaptive cyber attack simulation and automated incident response in cyber range environments", *Scientific Reports* (2026), article s41598-026-45937-9.
+  - In that paper the **attackers** use DQN, while the defenders use supervised/unsupervised anomaly detection plus rule-based response. Do not cite it as an RL defender.
+- **DQN-IDS — VERIFIED as "A Self-Adaptive Intrusion Detection System for Zero-Day Attacks Using Deep Q-Networks"** by Alkasassbeh, Omoush, Almseidin and Aldweesh (IEEE Xplore document 11192261). A ResearchGate record (396188562) dates it to January 2025 as an IEEE publication; the journal or venue name is not confirmed.
+  - Its "zero-day split" excludes whole ransomware families from training on UGRansome.
+  - Reported accuracy on the zero-day split: 95.9% binary and 92.0% multiclass.
+- **DeepStage — VERIFIED.** Phan, Nguyen and Bauschert, "DeepStage: Learning Autonomous Defense Policies Against Multi-Stage APT Campaigns", arXiv:2603.16969 (2026). Follow-ups:
+  - DeepXplain, arXiv:2603.21296, stated to be under review at GLOBECOM 2026.
+  - DeepFaith, arXiv:2607.24348.
+- **H-MARL on CAGE-4 — VERIFIED.**
+  - Singh, Rathbun, Graham, Oakley, Boboila, Oprea and Chin, "Hierarchical Multi-agent Reinforcement Learning for Cyber Network Defense" (arXiv:2410.17351).
+  - Published as an AAMAS 2025 paper (ACM DL 10.5555/3709347.3743999) and in the RL Journal/RLC 2025.
+
+### Q1 — Recurrent PPO vs belief-input PPO comparisons
+- **In cyber defense, the closest prior work is Q-BIRD.**
+  - Its defender is PPO conditioned on a belief over hidden attacker intent (benign, probing, attack, evasion).
+  - Its baselines are no mitigation, rule-based IDS, DQN, DRQN, PPO without belief, PPO-LSTM, PPO with Bayesian belief, and moving-target defense, evaluated over 10 seeds.
+  - That already covers your G1 (PPO without belief), G2 (PPO-LSTM) and G3 (PPO + belief).
+  - From the sections I read, it has no recurrent+belief arm (your G4) and no raw-feature-stacking control (your G5).
+  - It reports a damage reduction from 36.0±5.5 to 28.0±3.0 versus PPO with Bayesian belief.
+- **DeepStage is effectively a G4-type agent in an APT setting:**
+  - an LSTM stage estimator produces a probability vector over MITRE ATT&CK stages;
+  - that vector is concatenated with GNN graph embeddings;
+  - a further LSTM belief encoder (b_t = f_LSTM(b_{t-1}, o_t)) feeds a hierarchical PPO.
+  - It reports F1 0.887 and 84.7% mitigation success.
+- **BF-PPO is a G3-type agent** (particle-filter belief → PPO) on CAGE-2.
+- **General POMDP RL:**
+  - **Ni et al. 2022** is the key "recurrent is strong" reference.
+  - **"Learning Belief Representations for Partially Observable Deep RL" (Believer, ICML 2023, PMLR v202)** separates belief learning from the policy objective. It compares against recurrent PPO and asymmetric actor-critic (Pinto et al. 2018; Baisero and Amato 2022).
+  - A 2024 *Machine Learning* (Springer) paper, "POMDP inference and robust solution via deep reinforcement learning: an application to railway optimal maintenance" (DOI 10.1007/s10994-024-06559-2), compares LSTM and Transformer model-free agents with a "belief-input" feed-forward agent. It found that **the belief-input method outperformed** both.
+  - **Do results transfer?** Partly, and with opposite signs depending on how good the belief model is:
+    - When the belief comes from a correct generative model (railway, BF-PPO), belief-input wins.
+    - When memory is well tuned and no good model exists (Ni et al.), recurrent agents are competitive.
+  - Your evidential belief is neither an exact Bayesian filter nor learned end-to-end. The literature therefore does not predict your result, which is good for the paper's motivation, provided you frame the study as testing this question.
+
+### Q2 — Dempster–Shafer / Yager / subjective logic / EDL as an RL belief or observation
+- **In security, the evidence is close but not identical:**
+  - **SHIELD** (Wasif, Moore, Yoon, Lim, Kim, Nelson and Cho, 4th USENIX VehicleSec 2026, pp. 19–38) is the strongest prior art for "EDL uncertainty → security response".
+    - Per its abstract, "evidential vacuity, derived from Dirichlet-based perception, jointly drives inter-agent trust modulation, intrusion detection, and human escalation". It reports detecting "over 80% of compromised agents with under 15% false positives".
+    - It also has an embedded intrusion response system (quarantine, safe-mode).
+    - The PDF text says it "augments deep reinforcement learning with evidential perception", but the abstract does not mention DRL.
+  - **"Deep Reinforcement Learning Based Dynamic Reputation Policy in 5G Based Vehicular Communication Networks"** (IEEE Xplore 9428520; NSF PAR 10295357) states that "feedbacks from vehicles are combined in vehicular edge computing (VEC) servers using Dempster-Shafer theory… VEC then uses deep reinforcement learning to determine the optimum reputation update policy". A related paper is "A Multi-Level Dempster-Shafer and Reinforcement Learning-Based Reputation System for Connected Vehicle Security" (IEEE Xplore 10454856).
+  - Dempster–Shafer for IDS alert fusion, without RL, is old: "Prioritizing intrusion analysis using Dempster-Shafer theory" (AISec 2011, DOI 10.1145/2046684.2046694), alert-confidence fusion with extended DS (DOI 10.1145/1167253.1167289), and "Dempster-Shafer for Anomaly Detection" (arXiv:0803.1568).
+- **In other domains:**
+  - RL has been used *on* DS evidence, for example a Q-learning MDP for conflict management in multi-sensor DS fusion (*Entropy* 2021, PMC8469061) and RL-based deceptive-evidence detection in belief-function fusion (*Information Fusion*, pii S1566253523004189). This is the inverse direction: RL manages the fusion rather than consuming the fused belief.
+  - A 2024 EDL survey (arXiv:2409.04720) explicitly discusses "evidential policy networks", so EDL inside RL policies is an existing line.
+  - EDL itself goes back to Sensoy et al. 2018 (arXiv:1806.01768), grounded in subjective logic.
+- **"Evidential POMDP" / "belief-function POMDP":** this query returned only generic POMDP/DS material, with no paper using that term. I did not run the subjective-logic-state query (budget exhausted). **Unresolved; search Scopus for it.**
+
+### Q3 — Explicit unknown/novel-attack state plus an RL response policy
+- **Closest works:**
+  - **Siamese+PPO** (cross-dataset anomaly correlation feeding PPO/DQN/SAC adaptive defense).
+  - **DQN-IDS** (family-held-out zero-day split).
+  - **Q-BIRD** (hidden intent states, but no "unknown" class).
+  - **DeepStage** (stage index 0 = benign; no unknown class).
+  - **Hammar and Stadler** (intrusion/no-intrusion hidden state).
+  - **IoTHaven** (POMDP over device compromise).
+- **The gap that remains:** none of these, in what I read, represents "unknown attack" as an explicit hypothesis in the belief **together with** a separate ignorance mass Ω and a conflict K that the policy can act on. That combination is your defensible differentiator.
+- **Open-set detection without RL is mature:**
+  - **OpenTriIDS** (*Sensors* 26(20):6369, 2026) holds out classes on Edge-IIoTset and CIC-IoT-2023. Held-out classes enter only the test set. It reports macro-F1 of 76.81% on CIC-IoT-2023, against an RF open-set baseline of 52.72%.
+  - Others: "Detecting Unknown Attacks in IoT Environments: An Open Set Classifier…" (arXiv:2309.07461), VAEMax (arXiv:2403.04193) and a 2026 contrastive-loss zero-day NIDS (arXiv:2601.09902).
+
+### Q4 — Graded or escalating response ladders learned by RL
+**Prior work clearly exists; do not claim novelty here.**
+- **Q-BIRD:** monitoring, alerting, throttling, isolation, with cost-aware PPO.
+- **FedTrans-AgriIDS** (*Discover AI*, Springer, 2026; MAPPO): (0) normal monitoring, (1) alert, (2) rate-limiting, (3) deep packet inspection, (4) gateway isolation. This is almost exactly your ladder.
+- **SDN-IoT two-timescale RL with LLM governance** (arXiv:2604.01127): ALLOW, ALERT, MIRROR, RATE_LIMIT, DROP_FLOW, QUARANTINE, with per-action controller costs.
+- **DeepEdgeIDS** (arXiv:2511.18240): rate limiting, throttling, blocking, source filtering.
+- **DRL energy-aware IoT intrusion prevention** (IIETA): Allow, Drop, Quarantine, Reroute.
+- **DeepStage:** monitoring → access control → containment → remediation tiers.
+- **DeepAir** (IEEE TNSM 19(3):2207–2218, 2022, DOI 10.1109/TNSM.2022.3158468): adaptive DRL intrusion response in SDN.
+- **CAGE action spaces** (Monitor/Analyse/Remove/Restore/Decoy; CAGE-4 adds Allow/BlockTraffic).
+
+### Q5 — Is the "stacked viewer outputs vs fused belief" control (G5 vs G3) known?
+- **In supervised multimodal learning, yes:** comparing concatenation fusion against DS fusion is standard. For example, an adaptive late-fusion EDL/DS framework (*Knowledge and Information Systems*, DOI 10.1007/s10115-024-02150-2) reports beating a DS-only fusion model by 7.075%, with concatenation fusion as another comparator.
+- **In RL for security, I did not find it.** Q-BIRD compares belief *types* (amplitude vs Bayesian), not "fused belief vs its raw ingredients".
+- **Assessment:** G5 is a sound, reviewer-pleasing control. It is "standard good practice applied in a new place", not a methodological contribution. Present it as rigor, not novelty.
+
+## Details
+
+### A. Table of the 15 closest papers
+
+| # | Citation | Venue / year | Link / DOI | Read level | Belief type | RL algorithm | Memory | Domain | Unknown-attack handling | Datasets / env | Gap vs your plan |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | Shah et al., Q-BIRD: Amplitude-Belief RL for Adaptive Cyber Defense in PO V2X Networks | arXiv preprint, 2026 | https://arxiv.org/abs/2606.07796 | Full text, partial (abstract, Sec. I–V.C, conclusion) | Amplitude (complex-valued) belief over attacker intent, vs Bayesian belief baseline | PPO | Feed-forward + belief; baselines include PPO-LSTM, DRQN | V2X / IoV | Hidden intent states; no explicit unknown class | SUMO-OMNeT++/Veins simulation | Already compares no-belief vs LSTM vs belief PPO; lacks G4, G5, evidential fusion, Ω/K, dataset-based zero-day |
+| 2 | Phan, Nguyen, Bauschert, DeepStage | arXiv preprint, 2026 | https://arxiv.org/abs/2603.16969 | Full text, partial (to Sec. IV.G) | LSTM stage-probability vector + LSTM belief embedding | Hierarchical PPO | Recurrent (LSTM) | Enterprise APT | None explicit (stage 0 = benign) | CALDERA testbed | G4-like agent; no ablation grid, not IoT, no DS |
+| 3 | Le and Stadler, Learning Optimal Defender Strategies for CAGE-2 using a POMDP Model (BF-PPO) | CNSM 2025 | https://arxiv.org/abs/2509.06539 | Abstract + intro (snippet of PDF) | Particle-filter Bayesian belief | PPO | Belief input (no RNN reported in what I read) | Enterprise (CAGE-2) | None | CybORG CAGE-2 | G3-type with exact model; no memory comparison, not IoT, no unknown class |
+| 4 | Hammar and Stadler, Intrusion Prevention through Optimal Stopping | IEEE TNSM 19(3), 2022 | https://arxiv.org/abs/2111.00289 | Snippet | Bayesian belief (threshold structure) | T-SPSA / PPO comparisons | Belief-based | IT infrastructure | Binary intrusion state | Emulation + simulation | Theory-driven stopping; binary-ish actions; no evidential belief |
+| 5 | Hammar and Stadler, Learning Near-Optimal Intrusion Responses Against Dynamic Attackers | IEEE TNSM, 2023 | DOI 10.1109/TNSM.2023.3293413 | Abstract | Belief in optimal-stopping game | T-FP (fictitious self-play) | Belief-based | IT infrastructure | Dynamic attacker, no unknown class | Emulation + simulation | Game-theoretic; reviewers will cite as the rigorous POMDP standard |
+| 6 | Ni, Eysenbach, Salakhutdinov, Recurrent Model-Free RL Can Be a Strong Baseline for Many POMDPs | ICML 2022 (PMLR 162) | https://proceedings.mlr.press/v162/ni22a.html | Abstract | None (implicit memory) | Recurrent TD3/SAC-style model-free | Recurrent | General POMDP benchmarks | n/a | 21 envs | Justifies G2 strength; tuning burden for your G2/G4 |
+| 7 | Wang et al., Learning Belief Representations for Partially Observable Deep RL (Believer) | ICML 2023 (PMLR 202) | https://proceedings.mlr.press/v202/wang23p/wang23p.pdf | Snippet | Learned belief with state supervision | Model-free with belief; recurrent PPO baseline | Both | General POMDP | n/a | Grid/visual benchmarks | Direct general-RL precedent for belief vs recurrent PPO |
+| 8 | POMDP inference and robust solution via DRL: railway optimal maintenance | Machine Learning (Springer), 2024 | DOI 10.1007/s10994-024-06559-2 | Abstract snippet | Model-based Bayesian belief | Deep model-free RL | LSTM, Transformer vs belief-input FF | Infrastructure maintenance | n/a | Real railway data | Shows belief-input > LSTM/Transformer; precedent for G2 vs G3 |
+| 9 | Wasif, Moore, Yoon, Lim, Kim, Nelson, Cho, SHIELD | USENIX VehicleSec 2026, pp. 19–38 | https://www.usenix.org/system/files/vehiclesec26-wasif-shield.pdf | Snippet + abstract | Evidential vacuity (Dirichlet / subjective logic) driving trust, intrusion detection and human escalation | Deep RL per PDF text (algorithm not read; abstract does not mention DRL) | Not read | Human-swarm / UAV security | Uncertainty-driven escalation, quarantine; >80% compromised agents detected at <15% FP | Simulation (not read) | Closest evidential-uncertainty→security-response precedent; no DS fusion of multiple viewers, not IoT traffic |
+| 10 | Deep Reinforcement Learning Based Dynamic Reputation Policy in 5G Based Vehicular Communication Networks | IEEE (Xplore doc. 9428520); NSF PAR record | https://par.nsf.gov/servlets/purl/10295357 | Snippet | Dempster–Shafer combined vehicle feedback as RL state | Deep RL (algorithm not read) | Not read | Vehicular networks | Not addressed | Simulation | Precedent for DS-fused evidence as DRL state in security |
+| 11 | Alam, Rahman, Wang, IoTHaven | 2024 (venue not verified) | https://www.semanticscholar.org/paper/cb28fa52eeff0934572c24b54c0b022f0feca2cf | Abstract (S2 + dissertation abstract) | None explicit; POMDP handled by memory | DRQN | Recurrent (LSTM) | Trigger-action IoT | None | PEEVES-derived simulation | G2-type IoT POMDP defender; no belief comparison |
+| 12 | Hossain et al., A cross-dataset based zero-day IDS integrating Siamese network and RL | ICT Express 12:752–757, 2026; arXiv:2609.26115 | https://www.sciencedirect.com/science/article/pii/S2405959526000731 | Snippet | Anomaly-correlation scores (not a belief) | PPO (also DQN, SAC) | Not reported in what I read | IoT | Cross-dataset unknown-attack detection | Multiple datasets (names not read) | Unknown-attack + PPO response exists; no POMDP belief, no memory ablation |
+| 13 | Alkasassbeh, Omoush, Almseidin, Aldweesh, A Self-Adaptive IDS for Zero-Day Attacks Using Deep Q-Networks | IEEE, Jan 2025 (Xplore doc. 11192261; journal not confirmed) | https://ieeexplore.ieee.org/document/11192261/ | Abstract | None | DQN | No | Ransomware / network | Whole families held out ("zero-day split") | UGRansome | Precedent for family-held-out zero-day RL evaluation |
+| 14 | Singh et al., Hierarchical Multi-agent RL for Cyber Network Defense (H-MARL) | AAMAS 2025 / RLC 2025 | https://arxiv.org/abs/2410.17351 | Abstract | None explicit (custom observation) | Hierarchical PPO (MARL) | Not stated in abstract | Enterprise (CAGE-4) | None | CybORG CAGE-4 | Shows field standard is simulator-based closed loop; not IoT |
+| 15 | OpenTriIDS: Confidence-Guided Open-Set Intrusion Triage for Unknown Attack Detection in IoT Devices | MDPI Sensors 26(20):6369, 2026 | https://www.mdpi.com/1424-8220/26/20/6369 | Snippet | Confidence + prototype distance (not evidential) | None | n/a | IoT | Held-out classes, explicit unknown routing | Edge-IIoTset, CIC-IoT-2023 | Precedent for your held-out-family CICIoT2023 protocol; no RL |
+
+**Also relevant but outside the top 15** (read level in brackets):
+- FedAtten-DRL, DOI 10.1145/3708635.3708649 [abstract].
+- CyDER 2.0 paper, *Scientific Reports* 2026, s41598-026-45937-9 [snippet].
+- DeepAir, IEEE TNSM 2022, DOI 10.1109/TNSM.2022.3158468 [abstract].
+- FedTrans-AgriIDS, Springer *Discover AI* 2026, https://link.springer.com/article/10.1007/s44163-026-01694-2 [snippet].
+- SDN-IoT LLM-governed RL, arXiv:2604.01127 [snippet].
+- DeepEdgeIDS, arXiv:2511.18240 [snippet].
+- C-POMCP, arXiv:2407.11070 [abstract].
+- DeepXplain, arXiv:2603.21296 [abstract].
+- Belief-State RWKV, arXiv:2604.09671 [snippet; pilot study only].
+- Zomlot et al., AISec 2011, DOI 10.1145/2046684.2046694 [abstract].
+- Sensoy et al., EDL, arXiv:1806.01768 [snippet].
+- EDL survey, arXiv:2409.04720 [snippet].
+- Open-set IoT NIDS, arXiv:2309.07461 [snippet].
+- Autonomous RL-based IDS for IoT on CICIoT2023 and CIC IoT-DIAD 2024, MDPI *Digital* 6(2):41 [snippet].
+
+### B. Novelty verdict
+
+**(a) Comparison design: LOW–MODERATE novelty.**
+- **Evidence against:**
+  - Q-BIRD already runs PPO-no-belief vs PPO-LSTM vs DRQN vs PPO-with-Bayesian-belief in a cyber-defense POMDP.
+  - The railway paper and Believer do the belief-input vs recurrent comparison in general RL.
+  - Ni et al. set the recurrent-baseline bar.
+- **Evidence for:**
+  - I found no security paper with the full 2×2 factorial (memory × belief) plus a G5 "raw inputs, no fusion" control.
+  - The factorial lets you estimate an *interaction effect*: does belief help only when memory is absent? That is a real empirical question.
+- **Verdict:** sufficient for a workshop. It is not sufficient alone for a main-track security conference.
+
+**(b) Evidential belief for POMDP RL in IoT defense: MODERATE novelty — your best card.**
+- **Evidence for:** I found no work combining these elements:
+  - several frozen heterogeneous viewers (an EDL classifier, a GRU forecast residual, an MMPP traffic model);
+  - Dempster and Yager combination;
+  - an explicit unknown-attack focal element plus Ω and K;
+  - all fed to a PPO response policy on IoT traffic.
+- **Evidence against:**
+  - SHIELD (evidential vacuity → DRL + intrusion-response escalation).
+  - DS-combined evidence as a DRL state for vehicular reputation.
+  - A survey documenting "evidential policy networks".
+  - Decades of DS-based IDS alert fusion.
+- **Verdict:** novel as a *specific combination*. The paper must show empirically that Ω and K carry decision-relevant information that raw viewer outputs (G5) and memory (G2) do not.
+
+**(c) Evaluation protocol: LOW novelty, HIGH validity risk.**
+- **Evidence:**
+  - Held-out classes on CIC-IoT-2023 (OpenTriIDS).
+  - Family-held-out zero-day RL (DQN-IDS on UGRansome).
+  - Cross-dataset zero-day + PPO (Siamese+PPO).
+  - RL-IDS on CICIoT2023 and CIC IoT-DIAD 2024 (MDPI *Digital*).
+- **Your metrics are standard.** Novelty AUROC, FPR@fixed TPR, known-class accuracy and cost add nothing new.
+- **The critical flaw:** in a replayed static dataset, rate-limit or isolate actions do not change future traffic. The "POMDP" is then really a contextual-bandit or detection problem, which undermines the whole memory-vs-belief question.
+
+**Claims you must NOT make:**
+- "First PPO/DRL agent for POMDP-based IoT/network defense" (IoTHaven, DeepStage, BF-PPO, Hammar and Stadler).
+- "First comparison of recurrent vs belief-input PPO in cyber defense" (Q-BIRD).
+- "First to show recurrent model-free RL is a strong POMDP baseline" (Ni et al. 2022).
+- "First belief-state PPO for cyber defense" (BF-PPO, Q-BIRD, DeepStage).
+- "First graded/escalating response actions learned by RL" (Q-BIRD, FedTrans-AgriIDS, SDN-IoT governance, DeepEdgeIDS, DeepStage, DeepAir).
+- "First use of Dempster–Shafer in intrusion detection" (AISec 2011 and earlier).
+- "First use of evidential/subjective-logic uncertainty to drive RL-based security response" (SHIELD).
+- "First zero-day evaluation with held-out attack families" or "first open-set evaluation on CICIoT2023" (DQN-IDS, OpenTriIDS).
+- "First RL-based zero-day IoT defense with cross-dataset tests" (Siamese+PPO).
+- **Safer wording:** "to our knowledge, the first controlled study of whether Dempster–Shafer-fused evidential beliefs with explicit ignorance and conflict add value over memory and over unfused inputs for PPO-based IoT response". Even this should be hedged.
+
+### C. Likely reviewer attacks (with the evidence they would cite)
+1. **"This is not a POMDP; actions do not affect observations."**
+   - The dataset is static CICIoT2023 replay.
+   - Reviewers will cite CAGE-2/CAGE-4 (BF-PPO, H-MARL), Hammar and Stadler's emulation-plus-simulation methodology, and Q-BIRD's closed-loop co-simulation as the expected standard.
+2. **"The memory-vs-belief comparison is already done."** Q-BIRD (PPO-LSTM, DRQN, PPO-no-belief, PPO-Bayesian-belief), the railway *Machine Learning* 2024 paper, Believer (ICML 2023).
+3. **"Your recurrent baseline is under-tuned."** Ni et al. 2022 show recurrent model-free RL matches specialized methods on 18/21 environments when properly designed. Expect demands for equal tuning budgets and architecture/context-length sweeps for G2/G4.
+4. **"Why Dempster–Shafer instead of a Bayesian or particle-filter belief?"**
+   - BF-PPO uses a particle filter.
+   - Q-BIRD compares against Bayesian belief.
+   - Without a Bayesian-fusion or learned-fusion arm, the DS choice looks arbitrary.
+   - Expect the classic critique that Dempster's rule is counter-intuitive under high conflict; this is why conflict-management literature exists (*Entropy* 2021).
+5. **"Gains come from extra pretrained features, not fusion."** G5 addresses this, but reviewers will also want "G5 + memory" and "EDL viewer alone" arms.
+6. **"The unknown-attack signal is just an OOD detector; RL adds nothing."**
+   - Open-set IDS papers (OpenTriIDS, arXiv:2309.07461, VAEMax) already detect unknowns.
+   - You must beat a non-RL threshold policy on m(unknown), Ω and K.
+7. **"Graded response is not new."** Q-BIRD, FedTrans-AgriIDS, SDN-IoT governance (arXiv:2604.01127), DeepEdgeIDS, DeepAir.
+8. **"The zero-day protocol is standard, and CICIoT2023 families are easy or near-duplicate."**
+   - Cite OpenTriIDS and DQN-IDS.
+   - Reviewers may argue that holding out one DDoS variant while keeping its siblings is not a real zero-day; held-out *families* must be semantically distinct.
+9. **"Cost function is arbitrary."** Q-BIRD and the SDN-IoT paper use explicit per-action cost models (for example, controller overhead κ(a)). Reviewers will ask for sensitivity analysis.
+10. **"Statistical rigor."** Q-BIRD uses 10 seeds × 80 test episodes. Fewer seeds, or no confidence intervals, will be attacked.
+11. **"Frozen viewers leak test information."** If viewers are trained on data that overlaps held-out families or test windows, the zero-day claim collapses.
+12. **"Cross-dataset feature mismatch."** CICIoT2023 features differ from other datasets. Reviewers will ask how viewers transfer without retraining.
+
+### D. Differentiators and minimal extra experiments
+
+**Differentiators to emphasize:**
+- An *interaction-effect* question: does explicit evidential belief help **only** without memory (G3 > G1 but G4 ≈ G2)? Either answer is publishable if rigorous.
+- An *uncertainty decomposition* that the policy can use: Ω (ignorance) vs K (conflict) vs m(unknown). Show that each channel causally changes ladder choices, for example via an ablation that zeroes Ω or K at test time.
+- *Dempster vs Yager* under conflict: Yager moves conflict mass to Ω, which should produce more conservative actions on novel traffic. That is a testable, mechanism-level claim.
+
+**Minimal extra experiment list:**
+1. **A closed-loop environment.** At minimum, a traffic simulator where actions modify subsequent flows (rate-limit lowers attacker and benign throughput; isolate removes a device), parameterized from CICIoT2023 statistics. Without this, drop the "POMDP" framing.
+2. **A non-RL threshold baseline** on m(unknown), Ω and K, mapped to the ladder. RL must beat it.
+3. **A Bayesian-fusion arm** (product-of-experts or a calibrated softmax ensemble) and a **learned-fusion arm** (a small MLP over viewer outputs, trained end-to-end). Together these separate "DS helps" from "any fusion helps".
+4. **G5 + memory** (stacked raw outputs into LSTM-PPO), to complete the factorial.
+5. **An oracle-belief upper bound** (true class or state as input) and an **asymmetric-critic variant**, which Believer-style reviewers will expect.
+6. **Equal-budget hyperparameter search** for all arms (per Ni et al.), with at least 10 seeds, IQM and bootstrap CIs.
+7. **Leave-one-family-out rotation** over all CICIoT2023 families (not one split), plus one cross-dataset test with documented feature mapping. CIC IoT-DIAD 2024 or Edge-IIoTset are the obvious candidates.
+8. **A binary-block vs ladder ablation**, to show the ladder's value under the same cost model.
+9. **A cost-sensitivity sweep** over action costs.
+10. **Calibration of Ω** (does Ω rise on held-out families?), with reliability diagrams for the EDL viewer.
+
+### E. Target venues (deadlines verified by sub-agent; status flagged)
+
+| Venue | Fit | Typical length | Most recent deadline found | Verification status |
+|---|---|---|---|---|
+| IEEE/IFIP NOMS 2027 (Montréal, May 10–14, 2027) | Network management, RL-for-security tracks; Hammar/Stadler-style work fits | Full: 8 pp + refs/appendix (max 12); short: 4 pp (max 6), IEEE 2-col | Official noms2027.ieee-noms.org homepage: "30 Nov 2026 Paper Submission Deadline: (firm)"; notification 15 Feb 2027, camera-ready 28 Feb 2027. WikiCFP and callforpaper.org still list 9 Nov 2026 for technical session papers. Demo, dissertation-digest and experience-session papers due 23 Nov 2026 (experience papers max 6 pp incl. refs) | Official homepage date; page limits secondhand; treat 30 Nov as authoritative |
+| IEEE WoWMoM 2027 (Irvine, Jun 21–24, 2027) | IoT / wireless / mobile security | Up to 10 pp incl. refs, IEEE 2-col, double-blind | 1 Dec 2026 | Secondhand (WikiCFP / DBWorld); official CFP page UNVERIFIED |
+| IEEE EuroS&P 2027 Workshops (Madrid, Jul 2027) | Security workshops (e.g., ML/AI security workshops, if accepted) | Set per workshop, IEEE format | Late Feb / early Mar 2027 (per-workshop CFPs due by 11 Dec 2026) | Confirmed on official page (full fetch); exact workshop deadlines not yet published |
+| ACM AISec (CCS workshop) | Best thematic fit: ML + security, uncertainty, RL defense | Max 10 pp ACM 2-col + 2 pp refs/appendix (12 max) | 2026 edition: 24 Jul 2026 (passed; workshop held 15 Nov 2026). 2027 deadline UNVERIFIED (expect ~July 2027) | 2026 confirmed (official snippet) |
+| IEEE CNS | Network security, applied RL defense | Page limit UNVERIFIED | CNS 2026: 18 May 2026 (extended; passed). CNS 2027 CFP not found (UNVERIFIED) | 2026 confirmed (official snippet) |
+| IFIP/IEEE CNSM | Venue of BF-PPO and Hammar/Stadler papers; ideal audience | Full max 9 pp incl. refs; short max 5 pp, IEEE 2-col | CNSM 2026: 29 Jun 2026 (extended; passed). CNSM 2027 UNVERIFIED (expect ~June 2027) | 2026 confirmed (official snippet) |
+
+**Alternatives:**
+- **IEEE ICC 2027 CISS symposium:** deadline 30 Oct 2026, now passed; page limit UNVERIFIED.
+- **ACSAC 2026:** 26 May 2026, passed; 11 pp + appendices, 16 pp max. Too competitive for the current scope.
+- **ACM WiSec 2027:** cycle 1 on 18 Nov 2026 per secondhand source only, UNVERIFIED. Wireless focus makes it a weaker fit.
+- **IEEE GLOBECOM security symposia:** not verified.
+
+**Recommendation:**
+- If the closed-loop simulator is ready within two weeks, target **NOMS 2027** (30 Nov 2026 per the official homepage; aggregators still show 9 Nov) or **WoWMoM 2027** (1 Dec 2026).
+- Otherwise aim at **AISec 2027** or **CNSM 2027**. Their audience (Stadler group, CAGE community) will understand the POMDP framing, and they give you time to run the extra experiments.
+
+## Caveats
+
+### F. Claims in this answer I am least sure about
+1. **That Q-BIRD has no recurrent+belief (G4) arm.** I read its baseline list and sections I–V.C, not the full results and ablation section.
+2. **That BF-PPO uses no recurrent component.** I read only the abstract and intro snippets.
+3. **The NOMS 2027 deadline.** The official homepage says 30 Nov 2026 (firm), while WikiCFP and callforpaper.org still list 9 Nov 2026 for technical session papers. Confirm on the official CFP page.
+4. **SHIELD's role for DRL.** Authors and venue are confirmed (Wasif et al., USENIX VehicleSec 2026, pp. 19–38). However, its abstract mentions only evidential vacuity driving trust, intrusion detection and human escalation, not DRL. The DRL link comes from PDF text I read only as a snippet, and I do not know its RL algorithm.
+5. **The vehicular DS+DRL paper's exact venue and year.** It is identified as "Deep Reinforcement Learning Based Dynamic Reputation Policy in 5G Based Vehicular Communication Networks" (IEEE Xplore 9428520), but I did not confirm the conference name or year.
+6. **The Siamese+PPO paper's dataset names.** I did not read them; the journal (*ICT Express* 12:752–757, 2026) comes from a secondary citation.
+7. **The venue and year of DQN-IDS (IEEE Xplore 11192261), FedAtten-DRL and IoTHaven.** DQN-IDS is dated January 2025 only via ResearchGate.
+8. **That no "evidential POMDP" or subjective-logic-state RL paper exists.** The relevant query failed for budget reasons, so this is the largest search gap.
+9. **That the railway *Machine Learning* 2024 paper's "belief-input outperforms" result holds generally.** I read only the abstract and section snippets.
+10. **WoWMoM 2027 and WiSec 2027 dates,** which are from secondhand sources only.
+
+
+
+**Next steps:** (1) Session 1, Step 6; (2) build the closed-loop environment and the sanity-check baselines; (3) run the database sweep; (4) code the belief module and the offline tests; coding happens elsewhere using this md.
