@@ -5410,4 +5410,193 @@ for conference paper idea:
 
 
 
-**Next steps:** (1) Session 1, Step 6; (2) build the closed-loop environment and the sanity-check baselines; (3) run the database sweep; (4) code the belief module and the offline tests; coding happens elsewhere using this md.
+---
+
+## UPDATE — 17 November 2026 (new sections only; everything above is unchanged)
+
+Today: a recap of the PPO path and the G1 to G5 table, a status check of what is left to study for PPO, and the start of Session 2 (reinforcement learning from zero up to PPO), Steps 1 and 2 plus clarifications on the discount, the horizon and episodes. Decision: the rest of Session 1 (Steps 6 to 8) is skipped for now and Session 2 starts from zero. Sections 93 to 101 (16 November) stay as they are. Items marked (suggestion) are mine, not decisions. Items marked (verify) have not been checked against sources.
+
+### 102. Recap of the PPO path and the G1 to G5 comparison table
+
+**Done in Session 1 (Steps 1 to 5):** POMDP basics (hidden state, observation, belief, action); window and step Delta (start with Delta = W, sweep 1, 2, 5, 10 s); what the agent sees (belief block, window features by protocol segment, last action, context); the action ladder (wait, rate-limit, temporary block, isolate and alert a human); the reward (costs for missed attacks, wrongly cut traffic, heavy actions; the cost ratio decides how sure the agent must be before acting).
+
+**PPO points learned so far:** PPO is the coach (it trains the policy network and a value network), not the decider; it trains in an environment because recorded traffic cannot react to actions; it runs during training and upgrades, not in the live loop; the viewers, the world model and the belief module are trained beforehand and frozen, and PPO learns to use the belief without changing it; use a library (Stable-Baselines3, with sb3-contrib for the recurrent and masked versions); the user writes the environment, belief module and reward.
+
+**The comparison table (all arms share the identical environment, reward, ladder, step size, tuning budget and several seeds; the POMDP is frozen so nothing favors one arm):**
+
+| Arm | Memory | Policy receives (beyond window features and last action) | What it tests |
+|---|---|---|---|
+| G1 | none (feed-forward) | nothing extra | baseline: "pretend it is an MDP" |
+| G2 | recurrent (LSTM first, GRU as an ablation) | nothing extra | does memory alone help? |
+| G3 | none | the fused DS belief | does the belief help a policy with no memory? |
+| G4 | recurrent | the fused DS belief | does the belief add anything on top of memory? |
+| G5 | none | the viewers' raw outputs stacked, no DS fusion | control: is it fusion that helps, or just extra pretrained features? |
+
+(G6, a suggestion: G5 with a recurrent policy, to complete the grid.)
+
+| Comparison | Answers |
+|---|---|
+| G1 vs G2 | memory, with no belief |
+| G1 vs G3 and G2 vs G4 | the belief, with memory held fixed |
+| G3 vs G4 | memory, with the belief held fixed |
+| G3 vs G5 | whether DS fusion itself helps |
+| G1 vs G5 | whether the extra pretrained viewers help at all |
+
+**Conference-paper check (unverified deep-search report, Section 99):** the comparison idea is partly done already (Q-BIRD, a 2024 railway-maintenance paper, Believer, Ni et al.); the defensible part is the evidential (Dempster/Yager) multi-viewer belief with an explicit unknown state, Omega and K; a closed-loop environment (actions must change subsequent traffic) is mandatory, otherwise it is not really a POMDP.
+
+### 103. What is left to study for PPO (status)
+
+| # | Topic | Status |
+|---|---|---|
+| 1 | Session 1, Steps 6 to 8 (episode end and the U response; sanity checks with random, rule-based and oracle policies; one-page design) | Skipped by the user for now; decisions stay open and will be taken when the environment is built |
+| 2 | RL basics up to PPO (value, advantage, policy gradient, clipping, small numeric examples) | In progress: Session 2, Steps 1 and 2 done |
+| 3 | PPO's settings (learning rate, clip range, epochs, batch and rollout length, discount, entropy) | Not studied; needed to tune G1 to G5 fairly (a reviewer will attack an under-tuned G2) |
+| 4 | PPO vs DQN, on-policy vs off-policy | Not studied; DQN is a baseline arm and this affects the sample-efficiency argument for MBRL |
+| 5 | Belief inside PPO | Covered informally (Section 95), needs a short formal recap |
+| 6 | World models and MBRL basics | Partly covered (roles and limits, Section 97); imagination mechanics not studied |
+| 7 | Evaluation and experiment design (seeds, confidence intervals, sweeps) | Partly covered |
+| later | IPPO and MAPPO, federated PPO | Postponed (Papers 2 and 3) |
+
+**Background of the user:** no RL or DQN used in RAIDEN so far; starting RL from zero with baby steps and plain examples, explaining even basic terms.
+
+### 104. Session 2 plan: reinforcement learning up to PPO (11 steps)
+
+| Step | Plain question | Status |
+|---|---|---|
+| 1 | What is RL, and what are its pieces? (agent, environment, observation, action, reward) | Done |
+| 2 | What is a score over time? (episode, return, discount) | Done (with clarifications below) |
+| 3 | What is a policy? (the decision rule; why it outputs probabilities) | Next |
+| 4 | How does trial and error work? (exploration vs exploitation) | Left |
+| 5 | What is a value? (how good is this situation; the critic) | Left |
+| 6 | How does the policy improve? (policy gradient: "do more of what worked") | Left |
+| 7 | What is an advantage? ("better than expected") | Left |
+| 8 | Why do big updates break learning? (the reason PPO exists) | Left |
+| 9 | What is PPO's clip trick? | Left |
+| 10 | The whole PPO loop and its settings (the knobs) | Left |
+| 11 | Connect it to the IoT agent, and wrap up as an md section | Left |
+
+### 105. Step 1: what is RL and what are its pieces
+
+**Picture (teaching a dog to sit):** you cannot explain it in words and there is no answer key. The dog does something; you give a treat when it is good and nothing when it is not; over many tries it learns which behavior earns treats. Nobody told the dog "sitting is the answer": it found out from scores that came after its choices. That is reinforcement learning.
+
+| | Supervised learning (EDL, GRU, classifiers) | Reinforcement learning |
+|---|---|---|
+| Feedback | the correct answer for each example | only a score for what you did |
+| When feedback arrives | immediately | often later |
+| What it learns | "which label is right" | "which actions lead to good scores" |
+| Data | a fixed dataset | experience the agent creates by acting |
+
+Because the data depends on what the agent does, recorded traffic alone cannot train the defender (its actions would change the traffic, and a recording cannot react).
+
+**The five pieces:**
+
+| Piece | Dog | IoT agent | Plain meaning |
+|---|---|---|---|
+| Agent | the dog | the defender | the one that decides |
+| Environment | you, the room, the treats | the devices, the traffic and the attacker | everything the agent does not control |
+| Observation | what the dog sees and hears | the traffic window (and our belief) | what the agent gets to know |
+| Action | sit, jump, bark | wait, rate-limit, block, isolate | what it chooses to do |
+| Reward | treat or no treat | the score from missed attacks, cut traffic and heavy actions | the feedback number |
+
+(The state is the hidden truth; the observation is the part the agent can see; RL needs both words.)
+
+**The loop:** (1) the agent sees an observation; (2) it picks an action; (3) the environment reacts; (4) the agent receives a reward and a new observation; (5) back to 1. Every RL algorithm, including PPO, is a way of improving step 2 using the rewards from step 4.
+
+**Tiny example (illustrative numbers):** an attack is underway against a device. Step 1: observation = traffic spike, action = wait, reward = -1.0 (the attack traffic passed through). Step 2: spike continues, action = rate-limit, reward = -0.7 (half the attack was cut, and half the legitimate traffic too). Step 3: traffic back to normal, action = wait, reward = 0. Total over the three steps = -1.7.
+
+**Two ideas to keep:** (1) delayed credit: the reward for an action can show up later, and the hard part of RL is working out which earlier action deserved the credit (Steps 2 and 6); (2) the agent's job is not "be correct once" but "get the best total score over time", so it may take a small loss now to avoid a bigger one later.
+
+**Check (answered by the user):** a hub rate-limits device A; the next window shows A's traffic halved; the step score is -0.6. Observation = A's traffic halved; action = rate-limiting; reward = -0.6; environment = the devices, the traffic and the attacker. Correction: the hub is where the agent lives; the environment is everything the agent does not control.
+
+### 106. Step 2: score over time (episode, return, discount)
+
+**Picture:** a security guard's boss judges the whole shift, not one decision (a guard who stops a thief at 9 p.m. but sleeps through three break-ins later has not done well). The agent tries to get the best total score over a stretch of time.
+
+| Word | Plain meaning | Everyday picture |
+|---|---|---|
+| Episode | one complete run, from a start to an end | one game round, one shift, one attack scenario |
+| Return | the total score collected from now until the end of the episode | the final score at the end of the game |
+| Discount (gamma) | how much later rewards count compared with rewards now | money today is worth a little more than the same money next year |
+
+**For the IoT agent:** an episode could be 10 minutes of traffic that contains one attack (about 120 steps with Delta = 5 s). The return is the sum of the rewards. Exactly when an episode ends is one of the postponed Session 1 decisions.
+
+**Examples:** the three steps above have return -1.7. Two policies over 3 steps on a real attack (illustrative numbers from the reward step): "wait, wait, wait" gives -1, -1, -1, return -3; "rate-limit, then block, then block" gives -0.7, -0.4, -0.4, return -1.5. Step 1 alone shows the two policies are close; the whole episode shows how different they are.
+
+**Discounted return:** return = r0 + gamma x r1 + gamma^2 x r2 + ..., with gamma between 0 and 1. Example (gamma = 0.9, rewards -1.0, -0.7, 0): -1.0 + 0.9 x (-0.7) + 0 = -1.63.
+
+**Why not simply add everything up:** the future is uncertain (what happens in 10 minutes depends on things the agent cannot predict); an endless task would sum to infinity without a discount; sooner is better (stopping an attack now is worth more than stopping it later).
+
+**Patient vs short-sighted (X: do nothing = reward 0 now then -5 later; Y: rate-limit = -0.5 now then 0):** gamma = 0.9 gives X = 0 + 0.9 x (-5) = -4.5 and Y = -0.5, so the agent picks Y (correct); gamma = 0 gives X = 0 and Y = -0.5, so it picks X (wrong, it ignores the future). A gamma near 1 makes the agent accept a small loss now to avoid a bigger one later, which is what a defender must do.
+
+**The goal is the expected return:** attacks and traffic are random, so the same policy gets a different return each episode; the agent maximizes the average return over many episodes.
+
+**Check (rewards -1, -2, -4, gamma = 0.5), answered by the user:** -1 + (-2 x 0.5) + (-4 x 0.25) = -3. Reference for gamma = 0.9: -1 - 1.8 - 3.24 = -6.04, more negative than -3 because a larger gamma makes the agent feel the later losses more (nothing changed in the world; returns are only comparable with the same gamma).
+
+### 107. Clarifications on gamma, the horizon and episodes (from the user's questions)
+
+**Gamma = 0.5 is not patient; it is short-sighted.** Picture: gamma near 1 is someone saving for a car (the future counts almost fully); gamma near 0 is someone who spends everything today. Weights by how far ahead a reward is:
+
+| gamma | now | 1 step later | 2 steps later | 3 steps later |
+|---|---|---|---|---|
+| 0.5 | 1 | 0.5 | 0.25 | 0.125 |
+| 0.9 | 1 | 0.9 | 0.81 | 0.73 |
+| 0.99 | 1 | 0.99 | 0.98 | 0.97 |
+
+**Why a small gamma looks "better" but is not:** with gamma = 0.1 the rewards -1, -2, -4 give -1 - 0.2 - 0.04 = -1.24, which looks better than -3, but the losses still happen in reality; the agent just stopped caring. We choose gamma (it is a design setting, the agent does not).
+
+**Why a patient agent may accept a negative reward now:** from the example, waiting costs 0 now and -5 later while rate-limiting costs -0.5 now and 0 later: gamma = 0.9 gives -4.5 vs -0.5 (rate-limits); gamma = 0.05 gives -0.25 vs -0.5 (waits, the wrong choice).
+
+**"Why is the first value always better than the next ones?"** It is not: the first reward is only weighted at full size, later ones are scaled down, but a big later penalty still dominates (rewards -0.5 now and -5 later with gamma = 0.9 give -0.5 + 0.9 x (-5) = -5.0). The discount says "sooner is a bit better and the future is uncertain", not "the future is unimportant".
+
+**Choosing gamma (rule of thumb, general knowledge, to tune): the agent looks about 1 / (1 - gamma) steps ahead.**
+
+| gamma | looks about this many steps ahead | weight of a reward 20 steps away |
+|---|---|---|
+| 0.90 | 10 | 0.12 |
+| 0.95 | 20 | 0.36 |
+| 0.99 | 100 | 0.82 |
+
+With Delta = 5 s, a 60 s temporary block lasts 12 steps: with gamma = 0.9 the end of the block counts only 0.9^12 = 0.28; with gamma = 0.99 it counts 0.99^12 = 0.89. So gamma about 0.95 to 0.99 fits (the default in the RecurrentPPO signature is gamma = 0.99; Stable-Baselines3 PPO uses the same default, verify). If Delta gets shorter gamma must go up to look at the same real time (at Delta = 2 s, covering about 100 s needs 50 steps, so gamma is about 0.98). Sweep {0.9, 0.95, 0.99} with the same sweep for every arm.
+
+**The user's formula, gamma = (S - 1) / S:** with a 10-minute episode and a 5-second step, 600 / 5 = 120 steps (steps, not seconds), so gamma = 119/120 = 0.9917. This is the "looks ahead about 1 / (1 - gamma) steps" rule turned around: to care about the next H steps, set gamma = 1 - 1/H. Weights with gamma = 0.9917: 12 steps (60 s, end of a block) 0.90; 60 steps (5 min) 0.60; 120 steps (10 min, end of the episode) 0.37.
+
+| Steps to care about (H) | Real time at Delta = 5 s | gamma = 1 - 1/H |
+|---|---|---|
+| 12 | 1 min | 0.917 |
+| 24 | 2 min | 0.958 |
+| 60 | 5 min | 0.983 |
+| 120 | 10 min | 0.992 |
+
+**Caution:** the whole episode is not automatically the right horizon. Choose H by asking how long after an action its consequences still matter (a block lasts 60 s, an attack may evolve over a minute or two; something 9 minutes later is probably not caused by this step's action). A longer horizon also makes learning harder (more steps between an action and its outcome make credit assignment harder, Steps 6 and 7). H = 120 (gamma = 0.992) is a valid candidate; shorter ones (0.95 to 0.98) may learn faster. Sweep {0.95, 0.98, 0.99, 0.992} for every arm. If Delta changes, the number of steps for the same real time changes, and gamma must change with it.
+
+**When does an episode end? The environment decides during training, not the agent.**
+
+| Kind | Plain version | Example for this agent (suggestion, not decided) |
+|---|---|---|
+| Natural end | something happened that finishes the game | a device is fully compromised or a damage limit is hit |
+| Time limit | the clock runs out | 10 minutes = 120 steps at Delta = 5 s |
+
+A simple design (suggestion): each training episode is 10 minutes of traffic that is either all normal or contains one attack starting at a random time, with an early stop if the damage cap is hit. After an episode ends the environment is reset: a fresh scenario starts, and the belief memory and any recurrent memory are cleared. In deployment there are no episodes (the system runs continuously); episodes only exist to make training possible. A detail for Step 5: a time-limit cut is not a real end of the world, so the value estimate must treat it differently from a natural end (the library handles it).
+
+### 108. Reference answers for pending checks (not answered by the user in the session)
+
+- Step 2 follow-up (rewards -1, -2, -4 with gamma = 0.9): -6.04, more negative than -3 because a larger gamma weights the later losses more.
+- With Delta = 2 s and a wish to care about the next 120 s: H = 120 / 2 = 60 steps, gamma = 1 - 1/60 = 0.983.
+- One-sentence version of "why a patient agent may accept a negative reward now": because a small loss now can avoid a much bigger loss later, and only a gamma close to 1 lets the agent feel the later loss.
+
+### 109. Open items and next steps
+
+**Next steps (PPO study):**
+1. Session 2, Step 3: the policy (what the decision rule is; why it outputs probabilities instead of one fixed action).
+2. Then Steps 4 to 11 as listed in Section 104 (exploration vs exploitation; value; policy gradient; advantage; the problem of big updates; the clip trick; the whole PPO loop and its settings; connection to the IoT agent and the wrap-up).
+3. After Session 2: PPO vs DQN and on-policy vs off-policy; formal recap of the belief inside PPO; world models and MBRL basics; experiment design.
+
+**Open items:**
+1. Postponed Session 1 decisions: episode end and the response to U; sanity-check baselines (random, rule-based, oracle); the one-page design; the action-effect numbers, device-selection rule and per-protocol mapping; window and step; reward weights.
+2. Gamma and the horizon: sweep {0.95, 0.98, 0.99, 0.992}; decide the episode length and the end rule.
+3. Questions still open to the user: the window and overlap used in the CICIoT2023 run (and whether windows are time-ordered per device); which actions a real hub or operator can take; the CICIoT2023 DS run details (Section 44).
+4. Verify: SB3 PPO default gamma; the rule of thumb "looks about 1 / (1 - gamma) steps ahead" (general knowledge, to check in a reference); every paper, link and deadline in Section 99.
+5. Paused from before: cheap baselines and conformal prediction (Sections 28 and 29).
+6. Carry forward all open items from earlier sections.
+
+   
