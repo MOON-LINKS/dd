@@ -5600,3 +5600,123 @@ A simple design (suggestion): each training episode is 10 minutes of traffic tha
 6. Carry forward all open items from earlier sections.
 
    
+---
+
+## UPDATE — 17 November 2026 (continued, new sections only; everything above is unchanged)
+
+Today (second part): Session 2 continued. Step 3 (the policy), Step 4 (exploration vs exploitation) and Step 5 (value) are covered, plus a clarification on where exploration lives and what a world model adds. Sections 102 to 109 stay as they are. Items marked (suggestion) are mine, not decisions. Items marked (verify) have not been checked against sources.
+
+### 110. Session 2 status
+
+| Step | Topic | Status |
+|---|---|---|
+| 1 | What is RL and its pieces | Done (Section 105) |
+| 2 | Return, episode, discount | Done (Sections 106 and 107) |
+| 3 | What is a policy | Done (Section 111) |
+| 4 | Exploration vs exploitation | Done (Section 112) |
+| 5 | What is a value (the critic) | Explained, checks still open (Section 114) |
+| 6 | Policy gradient | Next |
+| 7 | Advantage | Left |
+| 8 | Why big updates break learning | Left |
+| 9 | PPO's clip trick | Left |
+| 10 | The whole PPO loop and its settings | Left |
+| 11 | Connect to the IoT agent, wrap up | Left |
+
+### 111. Step 3: what is a policy
+
+**Picture:** a guard's rule in his head, "when I see X, I do Y". It is not the score and not the belief; it is the decision rule.
+
+> **Policy = a rule that takes what the agent sees and says what to do.** Written pi(a | s): the probability of action a given what the agent sees.
+
+In our system: input = the observation (belief block, window features, last action, context); output = a choice on the ladder (wait, rate-limit, block, isolate). In PPO the policy is a neural network (the policy network, or actor) and its weights are what PPO trains.
+
+| Kind | Output | Example |
+|---|---|---|
+| Fixed rule | one action | "if U mass > 0.4, rate-limit" (our non-RL threshold baseline) |
+| Probabilistic | a probability per action | wait 0.10, rate-limit 0.60, block 0.25, isolate 0.05 (what PPO uses) |
+
+**How the network makes probabilities:** it ends in a softmax (Section 87). Raw scores (logits) become percentages that add to 100%. Example with scores (2.0, 1.0, 0.5, -1.0): e^x gives 7.39, 2.72, 1.65, 0.37, sum 12.13, so probabilities wait 0.61, rate-limit 0.22, block 0.14, isolate 0.03. (The scores are made-up numbers to show the arithmetic.) The agent then samples an action from these probabilities.
+
+**Why probabilities and not one fixed action:**
+1. Exploration: a policy that always does one thing never tries anything else.
+2. Smooth learning: training can nudge 0.25 to 0.27, but cannot nudge "always block" by a small amount; a fixed action gives nothing to improve.
+3. It can show when two actions are nearly equally good.
+
+**Training vs deployment:** during training, sample from the probabilities. At deployment, often pick the top action (more predictable and easier to explain). This is a design choice (suggestion).
+
+**Untrained network:** raw scores (0, 0, 0, 0) give 25% each: undecided, and training moves the probabilities toward a preference.
+
+**All arms G1 to G5 have the same kind of policy and the same softmax output over the ladder.** They differ only in the input (and G2, G4 have an LSTM inside for memory).
+
+### 112. Step 4: exploration vs exploitation
+
+**Picture:** a new city, one decent restaurant found. Exploit = go back to it; explore = try a new place. Only exploiting may miss the best one; only exploring never enjoys the good one.
+
+| | Exploit | Explore |
+|---|---|---|
+| What it does | pick the action that looks best so far | try something else |
+| Gain | good score now | information about what else works |
+| Risk | stuck with a mediocre habit | a bad score on this try |
+
+**In our agent:** early on "wait" scores fine on normal traffic. Rate-limiting at the first sign of U may look bad on a few tries (it cut some legitimate traffic), so without exploration the agent would drop it too soon and never learn it saves damage during an attack (illustrative: real attack, wait -3.0 vs rate-limit then block -1.5).
+
+**Where it lives:** in the policy, through its probabilities and sampling. A 0.60 action is chosen most of the time (exploit); a 0.05 action is still chosen about 1 time in 20 (explore). There is no separate switch between modes. As training goes on, good actions gain probability and the distribution sharpens, so exploring fades on its own.
+
+**Entropy bonus (a PPO setting, Step 10):** if the distribution collapses too early (for example 0.97 on one action), exploring stops and the agent can get stuck. PPO adds a small bonus for keeping probabilities spread. Entropy is high when probabilities are even (0.25 each) and low when one action dominates. A higher entropy coefficient means more exploring for longer.
+
+**Why exploring is safe in training only:** in the simulator a bad action harms nobody; in a real home blocking a legitimate device annoys a user. At deployment exploration is usually turned off.
+
+### 113. Clarification: who explores, and what a world model adds
+
+- **There is one thing, the policy.** The policy network holds the explore/exploit balance; sampling draws the action; PPO trains the network, and its entropy bonus keeps some exploring alive.
+- **Exploitation is not "look up old records"**: it is the policy's current best guess, learned from past experience and stored in its weights. **Exploration is not "use a GRU-predicted outcome"**: it is sampling a lower-probability action by chance. No separate model is assigned to either.
+- **G1 explores** with no world model at all, through the sampling.
+- **The world model belongs to a different axis** (model-based vs model-free, "where he practices", Section 94). In the model-based arm (old arm D) the GRU-world-model supplies extra practice episodes ("what if I throttled here?") on imagined traffic, alongside real or simulated traffic. The agent still decides by sampling the same policy. The world model does not explore; it gives more places to explore without touching the real environment.
+- **Corrections to my own wording of it:** the extra practice is not unlimited (imagined traffic is only as good as the model, and its errors pile up over long imagined episodes, Section 97), and it is not a separate learning step (the learning is the same PPO update on more data).
+
+> One line: the policy holds the explore/exploit balance; PPO trains the policy; a world model, if used, only supplies extra practice data and takes no part in the choice.
+
+### 114. Step 5: what is a value
+
+**Picture:** in chess, "how good is your position?" asked before you move. A strong player can say "winning" or "in trouble" without choosing a move.
+
+> **Value = the return the agent expects to collect from this situation onward, if it keeps following its policy.** It is the Step 2 return, but as a prediction made before the episode finishes.
+
+| Situation | Expected return from here (made-up numbers) |
+|---|---|
+| Normal traffic, belief Normal 0.95 | about 0 |
+| Belief U 0.45, device getting busier | about -2.0 |
+| Attack half through, device still open | about -4.0 |
+
+The value is a number attached to a **situation**, not to an action.
+
+**The critic:** PPO trains two networks.
+
+| Network | Output | Job |
+|---|---|---|
+| Policy (actor) | probabilities over actions | decides |
+| Value (critic) | one number | judges how good the situation is |
+
+In the standard setup both read the same observation. The critic is trained by comparison: if it predicted -2.0 and the real return was -3.0, it adjusts toward -3.0; over many episodes its predictions become accurate.
+
+**Why it is needed:** the step reward says what happened this step, not whether the situation was good or bad. If the critic expected -3.0 from a situation and the action got -0.5 plus a calm future, the action did better than expected. That "better than expected" is the **advantage** (Step 7), which tells the policy which actions to make more likely. The value is the yardstick.
+
+**Value vs return:** the return is what actually happened (known at the end); the value is what the critic predicts will happen (known now).
+
+### 115. Reference answers for pending checks (not answered by the user in the session)
+
+- Step 4, check 1 (policy at wait 0.97, others 0.01): a problem, because the agent almost never tries the other actions, so it can get stuck with a habit it never tests (the entropy bonus exists for this).
+- Step 4, check 2 (wild exploring in the simulator vs a real home): in the simulator a bad action harms nobody; in a real home it cuts off a legitimate user.
+- Step 5, check 1 (critic predicted -2.0, real return -0.5): better than expected, by 1.5 (-0.5 minus -2.0 = +1.5). This difference is the idea behind the advantage.
+- Step 5, check 2: the value is a property of a situation, not of an action.
+
+### 116. Open items and next steps
+
+**Next steps:**
+1. Answer the two Step 5 checks (reference answers above), then Step 6: policy gradient (how the policy improves: "do more of what worked").
+2. Then Steps 7 to 11 as listed in Section 110.
+3. After Session 2: PPO vs DQN (on-policy vs off-policy), formal recap of the belief inside PPO, world models and MBRL basics, experiment design.
+
+**Open items:**
+1. Carry forward all open items from Sections 102 to 109 (postponed Session 1 decisions, gamma and horizon sweep, window and overlap questions, CICIoT2023 DS run details, verification items).
+2. Verify (general knowledge, not checked against a reference): that actor and critic read the same observation in the standard setup; that exploration is usually turned off at deployment.
