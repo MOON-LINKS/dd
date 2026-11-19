@@ -5773,3 +5773,207 @@ Today: Session 2 finished (Steps 6 to 11): policy gradient with its math, advant
 2. Postponed Session 1 decisions: episode end and U response, window and step, action-effect numbers, device-selection rule, per-protocol mapping, reward weights, sanity-check baselines (random, rule-based, oracle).
 3. Verify all defaults and formulas against the PPO paper and SB3 docs.
 4. Carry forward all open items from earlier sections.
+
+
+---
+
+## UPDATE — 19 November 2026 (continued, new section only; everything above is unchanged)
+
+### 123. PPO QUICK REFERENCE (plain words first; read this section when asked about PPO)
+
+**Status:** consolidates Session 2 (Sections 105 to 121) into one fast reference, with the points that caused confusion fixed. Numbers in examples are made up to show the idea (illustrative). Items marked (verify) are general knowledge not checked against the PPO paper or Stable-Baselines3 docs.
+
+---
+
+#### A. PPO in five sentences
+
+1. The agent plays many episodes and gets scores.
+2. For each action it asks: was this better or worse than I normally expect in this situation? (the advantage)
+3. Better than expected: make that action more likely. Worse: less likely.
+4. Do this in small steps so the policy never changes too much at once (the clip).
+5. Repeat.
+
+Everything else in PPO is detail to make these five sentences precise.
+
+---
+
+#### B. The glossary (one line each)
+
+| Word | Plain meaning | Where from |
+|---|---|---|
+| Policy (actor) | the decision rule: observation in, probability per action out (softmax) | Step 3 |
+| Episode | one complete run, e.g. 10 min = 120 steps at 5 s | Step 2 |
+| Return | the total score of the episode, discounted by gamma | Step 2 |
+| Gamma | patience factor: return = r1 + r2 x gamma + r3 x gamma^2 + ... | Step 2 |
+| Value (critic) | the critic's prediction: "from this situation I expect a total score of about X" | Step 5 |
+| Advantage | real score minus the critic's expectation | Step 7 |
+| Ratio | new probability of the action divided by old probability | Step 9 |
+| Clip | speed limit: no extra credit for moving an action's probability more than about 20% per update | Step 9 |
+| Entropy | how spread out the probabilities are; high = still exploring | Step 4 |
+| Rollout / batch | the block of steps collected before each update | Step 10 |
+
+---
+
+#### C. Two names that must NOT be mixed
+
+| Symbol | Job |
+|---|---|
+| **gamma** (0.9, 0.99) | the patience factor: later rewards count less. Return = N1 + N2 x 0.9 + N3 x 0.9^2 ... This is the "0.9" factor. |
+| **lambda** | a noise-vs-accuracy dial used only inside the advantage estimate (GAE). Ignore it until tuning; default about 0.95 (verify). |
+
+Rule of thumb for gamma: gamma = 1 - 1/H, where H = how many steps ahead the consequences still matter (H = 120 gives 0.992). Sweep {0.95, 0.98, 0.99, 0.992}.
+
+---
+
+#### D. Where the advantage comes from (nobody gives it)
+
+> **Advantage = what actually happened - what the critic expected.**
+
+Example: an attack is underway; the critic expects -3.0 from this situation.
+
+| Action tried | Real score after it | Expected | Advantage |
+|---|---|---|---|
+| wait | -3.0 | -3.0 | 0 (as expected) |
+| rate-limit | -1.5 | -3.0 | +1.5 (better) |
+| block | -2.0 | -3.0 | +1.0 (better) |
+
+- The real score comes from the environment's reward (costs for missed attack traffic, cut legitimate traffic, heavy actions).
+- The expectation comes from the critic, a network that learns "in this kind of situation scores usually come out around X".
+- Early in training the critic guesses badly, so advantages are noisy; later they become meaningful. This is why actor and critic are trained together.
+- Why subtract at all: all our scores are negative, so without subtraction even the best action (-1.5) looks bad and would be pushed down. Subtracting recenters scores around "normal".
+- Check answer: expected -2.0, real -2.5 gives advantage -0.5, so the policy pushes that action down.
+
+---
+
+#### E. Why the update divides by the action's probability (the "fairness" idea)
+
+Say the policy has 3 actions: wait 0.6, rate-limit 0.3, block 0.1. Over 100 episodes they are tried about 60, 30 and 10 times.
+
+**Case 1: all equally good (advantage +1).** Push = tries x advantage = 60, 30, 10. Wait gets 6 times more push than block only because it is tried more; the policy would drift toward wait for no reason. Dividing by the probability: 60/0.6 = 30/0.3 = 10/0.1 = 100. Equal, which is correct.
+
+**Case 2: not equally good (advantages wait +1, rate-limit +2, block +3).**
+
+| Action | Tries | Push without the fix | Push with the fix (divide by probability) |
+|---|---|---|---|
+| wait | 60 | 60 | 100 |
+| rate-limit | 30 | 60 | 200 |
+| block | 10 | 30 | 300 |
+
+Without the fix the best action gets the smallest push, only because it is rarely tried. With the fix the push follows how good each action is.
+
+This division is the "grad log pi" (divided-by-itself) term in the math. "Average" means doing this over many episodes so luck cancels out. (Simplified picture: the real formula pushes the network's raw scores (logits) rather than probabilities directly, but the idea of the division is the same. The library computes it.)
+
+Check (not yet answered by the user): probabilities 0.5, 0.4, 0.1 and all advantage +1: tries 50, 40, 10; push after dividing 50/0.5 = 40/0.4 = 10/0.1 = 100.
+
+---
+
+#### F. How one update changes the probabilities (the nudge)
+
+Example: wait 0.60, rate-limit 0.40; the agent sampled rate-limit and it had advantage +1.5. The weights move a little toward making rate-limit likelier: probabilities become about wait 0.56, rate-limit 0.44. Over thousands of updates the policy might settle near wait 0.10, rate-limit 0.85. The size of the nudge follows the size of the advantage: a big win moves the probabilities more than a small one. (Illustrative.)
+
+For a softmax policy the direction on the raw scores is: (1 for the chosen action, 0 for the others) minus (the current probabilities). Example (wait 0.60, rate-limit 0.40, sampled rate-limit): wait -0.60, rate-limit +0.60.
+
+---
+
+#### G. Why big updates break learning, and the clip
+
+**Problem:** the batch and its advantages describe the old policy. If one update changes the policy a lot, they no longer apply; the new policy is worse, collects worse data, and learning can spiral down and not recover. (Picture: a guard who panics after one bad night and rewrites his whole routine.)
+
+**Fix:** measure the change with the ratio r = new probability / old probability (r = 1.2 means 20% likelier). PPO's clip (eps about 0.2) stops rewarding changes beyond about +-20%, so the policy cannot run far from the policy that collected the data. The clip removes the incentive; it does not strictly forbid a big move. Side benefit: the same batch can be reused for several passes (epochs).
+
+| Case (eps 0.2) | Advantage | Ratio | Value used | Meaning |
+|---|---|---|---|---|
+| good action, small change | +1.5 | 1.1 | 1.65 | still learning |
+| good action, moved a lot | +1.5 | 1.5 | 1.80 | capped: no extra credit |
+| bad action, moved a lot (down) | -1.5 | 0.5 | -1.20 | still penalized |
+| good action, ratio 1.4 | +2.0 | 1.4 | 2.4 | capped |
+| bad action made likelier | -2.0 | 1.4 | -2.8 | min keeps the full penalty |
+
+The min keeps the objective pessimistic: it never lets clipping make a mistake look better than it is.
+
+---
+
+#### H. The loop
+
+1. Collect: run the current policy for N steps, saving observation, action, reward and the action's probability.
+2. Critic gives a value for every step.
+3. Compute advantages (GAE, then normalized across the batch).
+4. Update for several epochs on small minibatches: policy loss (clipped) + value loss + entropy bonus.
+5. Throw the batch away (PPO is on-policy: after the update the policy moved, so the old batch is stale) and repeat.
+
+Loss = -(clipped objective) + c1 x (value loss) - c2 x (entropy).
+
+---
+
+#### I. The knobs (starting points to tune; verify against SB3 docs)
+
+| Knob | Typical start | Meaning |
+|---|---|---|
+| learning rate | 3e-4 | size of each weight step |
+| n_steps (rollout) | 2048 | steps collected per update (about 17 episodes of 120 steps for us) |
+| minibatch size | 64 | steps per gradient step |
+| epochs | 10 | passes over each batch |
+| clip range | 0.2 | allowed ratio change |
+| gamma | 0.99 (sweep ours) | patience |
+| GAE lambda | 0.95 | advantage noise/bias dial |
+| entropy coef | 0 to 0.01 | exploring pressure; raise it if entropy collapses early |
+| value coef | 0.5 | weight of the critic loss |
+| network | 64 x 64 | hidden layers |
+
+Fairness rules for G1 to G5: same tuning budget and search ranges for every arm; grid-edge check on every tuned value; recurrent arms need extra care (hidden size, sequence length); at least 10 seeds with bootstrap intervals; monitor return, value loss, entropy and clip fraction.
+
+---
+
+#### J. How it connects to our IoT agent
+
+```
+traffic window -> frozen viewers (EDL, GRU residual, MMPP)
+   -> DS belief module (fusion, K, Omega, memory k)
+   -> observation = [belief | window by segment | last action | context]
+   -> actor -> softmax over the ladder -> action
+   -> environment reacts -> reward + next window
+   -> critic V -> advantage -> clipped PPO update of actor and critic
+```
+
+- PPO trains only the actor and the critic. The viewers, DS rules and memory rule are frozen and tuned beforehand; PPO learns to use the belief, not to change it.
+- Arms G1 to G5 differ only in the observation (nothing extra, fused belief, raw viewer outputs) and memory (feed-forward or LSTM). Same PPO, same loop, same ladder.
+- Exploration lives in the policy (sampling plus the entropy bonus), not in a separate model. A world model, if used (model-based arm), only supplies extra practice data.
+- Tools: Stable-Baselines3 PPO (G1, G3, G5), sb3-contrib RecurrentPPO (G2, G4), MaskablePPO for action masks (verify that masks and recurrence can be combined). The real work is the Gymnasium environment: traffic source, action effects, device-selection rule, reward, episode end, belief module.
+
+---
+
+#### K. Optional: the equations (not needed to use PPO; the library computes them)
+
+- Goal: maximize J = average return. Policy gradient: grad J = E[ sum over steps of grad log pi(a|s) x weight ].
+- The log appears because grad P = P x grad log P turns a sum back into an average we can sample, and because the log of a product is a sum, so the environment terms vanish (the method is model-free).
+- The weight is the advantage A (reward-to-go minus a baseline V(s); subtracting a baseline adds no bias on average and removes noise).
+- One-step advantage: delta = r + gamma x V(next) - V(now). GAE blends one-step, two-step ... versions with lambda: A = delta_t + (gamma lambda) delta_{t+1} + (gamma lambda)^2 delta_{t+2} + ...
+- Clipped objective: L = min( r A , clip(r, 1-eps, 1+eps) A ), r = pi_new / pi_old.
+- Reference: Schulman et al. (PPO 2017, GAE 2015) (verify citations).
+
+---
+
+#### L. Fast answers to likely questions
+
+| Question | Short answer |
+|---|---|
+| Does PPO contain exploration? | No separate part: exploration is the policy's sampling; PPO's entropy bonus keeps it alive. |
+| Does PPO contain the belief? | No. The belief is computed outside PPO and fed in as input numbers. |
+| Does PPO change the viewers or DS? | No. They are frozen; PPO changes only actor and critic weights. |
+| Where does the advantage come from? | Real score minus the critic's expectation. Nobody provides it. |
+| Is the discount gamma or lambda? | Gamma. Lambda is only the advantage-estimation dial. |
+| Why a critic? | To give the "expected score" that turns raw negative scores into better/worse-than-usual. |
+| Why train in a simulator? | Recorded traffic cannot react to actions, and bad exploratory actions harm nobody there. |
+| Why throw the batch away? | The policy has moved; old data and advantages are stale (on-policy). |
+| Is PPO run live in the hub? | No. It runs during training and upgrades; the frozen policy acts live (usually picking the top action). |
+| PPO vs DQN? | Not studied yet (planned Session 3). |
+
+---
+
+#### M. Open items
+
+1. Study next: PPO vs DQN (on-policy vs off-policy) and the formal belief-in-PPO recap (possible Session 3); then world models and MBRL; then experiment design.
+2. Postponed Session 1 decisions: episode end and U response, window and step, action-effect numbers, device-selection rule, per-protocol mapping, reward weights, sanity-check baselines (random, rule-based, oracle).
+3. The user reported low confidence in Steps 9 to 11 and the policy-gradient math; revisit with one tiny example per idea (the nudge, the advantage, the clip) if still unclear.
+4. Verify all defaults and formulas against the PPO paper and SB3 docs.
+5. Carry forward all open items from earlier sections.
