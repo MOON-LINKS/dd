@@ -5720,3 +5720,56 @@ In the standard setup both read the same observation. The critic is trained by c
 **Open items:**
 1. Carry forward all open items from Sections 102 to 109 (postponed Session 1 decisions, gamma and horizon sweep, window and overlap questions, CICIoT2023 DS run details, verification items).
 2. Verify (general knowledge, not checked against a reference): that actor and critic read the same observation in the standard setup; that exploration is usually turned off at deployment.
+
+---
+
+## UPDATE — 19 November 2026 (new sections only; everything above is unchanged)
+
+Today: Session 2 finished (Steps 6 to 11): policy gradient with its math, advantage and GAE, why big updates break learning, PPO's clip, the full loop with its knobs, and the connection to the IoT agent. Items marked (suggestion) are mine. Items marked (verify) are general knowledge not checked against a reference; defaults and formulas should be checked in the PPO paper and the Stable-Baselines3 docs.
+
+### 117. Step 6: policy gradient ("do more of what worked")
+
+- Goal: maximize J(theta) = E[G(tau)], the average return; theta = policy weights, tau = one episode.
+- J = sum over tau of P(tau; theta) G(tau); theta lives only in P. The gradient of P is not an average, so use the log trick: grad P = P grad log P. Then grad J = E[grad log P(tau) G(tau)], an average we can sample.
+- P(tau) = p(s0) x product of pi(a_t|s_t) p(s_{t+1}|s_t,a_t). The log turns the product into a sum; start and environment terms contain no theta, so they vanish: grad log P = sum of grad log pi(a_t|s_t). No model of traffic reaction is needed (model-free).
+- Result: grad J = E[ sum_t grad log pi(a_t|s_t) G ].
+- For a softmax policy, d log pi(a) / d z_k = 1[k=a] - pi(k). Example (wait 0.60, rate-limit 0.40, sampled rate-limit): direction (-0.60, +0.60).
+- Update: theta <- theta + alpha grad J. Numeric example: logits (0.405, 0), weight +1.5, alpha 0.1 moves probabilities from 0.60/0.40 to about 0.556/0.444 (illustrative).
+- The log divides by pi(a): rarely chosen actions get a bigger push when they work.
+- Fix 1, reward-to-go: use G_t (return from step t on), because earlier rewards are noise. Fix 2, baseline: subtract b(s); no bias because E_a[grad log pi] b(s) = b(s) grad(sum_a pi) = 0. With b(s) = V(s), the weight G_t - V(s) is the advantage.
+- Why it matters: all our returns are negative, so without a baseline even a better action (-1.5) would be pushed down.
+
+### 118. Step 7: advantage and GAE
+
+- Advantage = how much better or worse an action did than the critic expected. Simplest: A_t = G_t - V(s_t).
+- One-step form (TD): delta_t = r_t + gamma V(s_{t+1}) - V(s_t). Low noise, some bias (V can be wrong). Example (gamma 0.9): V(s_t) = -3.0, r_t = -0.5, V(s_{t+1}) = -1.0 gives +1.6.
+- GAE (Schulman et al., 2015; verify): A_t = delta_t + (gamma lambda) delta_{t+1} + (gamma lambda)^2 delta_{t+2} + ... lambda = 0: one-step only; lambda = 1: G_t - V. Common default about 0.95 (verify).
+- Advantages are normalized across the batch.
+- Reference checks: delta = -1.0 + 0.9 x (-0.5) - (-2.0) = +0.55; lambda = 0 means one-step only (low noise, more bias).
+
+### 119. Steps 8 and 9: big updates and the clip
+
+- Problem: data and advantages belong to the old policy; a big update makes them stale, gives a worse policy, which collects worse data; performance can collapse.
+- Ratio r = pi_new(a|s) / pi_old(a|s). Objective L = min(r A, clip(r, 1-eps, 1+eps) A), eps about 0.2.
+- Examples (eps 0.2): A +1.5, r 1.5 gives 1.80 (capped); A -1.5, r 0.5 gives -1.20 (still penalized). Checks: A +2.0, r 1.4 gives 2.4; A -2.0, r 1.4 gives -2.8 (min keeps the full penalty).
+- The clip removes the incentive for big changes rather than forbidding them. It allows several epochs on one batch.
+
+### 120. Step 10: the PPO loop and knobs
+
+- Loop: collect rollout, critic values, GAE advantages (normalized), several epochs of minibatch updates, discard the batch, repeat.
+- Loss = -(clipped objective) + c1 (value loss) - c2 (entropy).
+- Knobs (typical starts, verify): learning rate 3e-4, n_steps 2048, minibatch 64, epochs 10, clip 0.2, gamma 0.99, lambda 0.95, entropy 0 to 0.01, value coef 0.5, network 64x64.
+- For our agent: 2048 steps is about 17 episodes of 120 steps; sweep gamma {0.95, 0.98, 0.99, 0.992}; same tuning budget for every arm with a grid-edge check; recurrent arms need extra tuning care; at least 10 seeds with bootstrap intervals; monitor return, value loss, entropy and clip fraction.
+
+### 121. Step 11: connection to the IoT agent
+
+- Chain: window -> frozen viewers -> DS belief -> observation [belief | window by segment | last action | context] -> actor -> softmax over ladder -> action -> environment -> reward -> critic -> GAE -> clipped update. PPO trains only actor and critic.
+- Arms G1 to G5 differ only in observation content and memory.
+- Tools: Stable-Baselines3 PPO, sb3-contrib RecurrentPPO and MaskablePPO (verify masks and recurrence can be combined).
+
+### 122. Open items and next steps
+
+1. Study next: PPO vs DQN (on-policy vs off-policy), formal belief-in-PPO recap, world models and MBRL, experiment design (possible Session 3 layout: DQN vs PPO plus belief recap).
+2. Postponed Session 1 decisions: episode end and U response, window and step, action-effect numbers, device-selection rule, per-protocol mapping, reward weights, sanity-check baselines (random, rule-based, oracle).
+3. Verify all defaults and formulas against the PPO paper and SB3 docs.
+4. Carry forward all open items from earlier sections.
