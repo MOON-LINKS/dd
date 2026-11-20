@@ -5977,3 +5977,75 @@ traffic window -> frozen viewers (EDL, GRU residual, MMPP)
 3. The user reported low confidence in Steps 9 to 11 and the policy-gradient math; revisit with one tiny example per idea (the nudge, the advantage, the clip) if still unclear.
 4. Verify all defaults and formulas against the PPO paper and SB3 docs.
 5. Carry forward all open items from earlier sections.
+
+
+---
+
+## UPDATE — 20 November 2026 (new section only; everything above is unchanged)
+
+### 124. 6G: what was found, what is safe to use, and where it fits the PhD
+
+**Status:** first-pass research (about six web searches, snippet and abstract level, nothing read in full). Verification levels: READ = abstract or snippet seen; VERIFY = check against full text or the 3GPP document before citing. Items marked (suggestion) are my reasoning, not findings. Earlier 6G notes in this chat (speed, delay, density figures) came from memory and are NOT sourced.
+
+#### A. Corrections to earlier statements
+1. The "security layer that tests graded actions" idea is the roadmap's digital twin (old Paper 3), not 6G's AI. Do not attribute it to 6G.
+2. "6G AI is mostly for performance, not security" was too narrow. The literature treats AI in 6G as both a performance tool and a security tool, and also as a new attack surface ("double-edged sword").
+3. Starlink-type low-orbit satellites have much lower delay than old high-orbit ones (my earlier "long delay" was outdated; figures from memory, VERIFY). Satellite internet (a dish plus router) and 3GPP non-terrestrial networks (satellite as a cell tower for small devices) are different things.
+4. A bandwidth cap works best against floods. It fails against exploits (small harmful message) and botnets (many small senders). This is why the agent reads behavior, not only volume.
+
+#### B. Timeline (READ; VERIFY against 3GPP before citing)
+| Item | Finding | Source |
+|---|---|---|
+| Release 20 | 6G scenarios and requirements study approved at RAN#112 in June 2026 (TR 38.914); working-group studies conclude June 2027; 14 6G study items | 3GPP Rel-20 highlights (Samsung, Oct 2026); ComSoc blog 16 Jun 2026 |
+| Release 21 | first 6G specifications plus 5G-Advanced; 6G Work Item for 6G Radio due March 2027 | ComSoc; Qualcomm OnQ (June 2026) |
+| Core network | 6G core architecture (signaling, security, AI-native core) in Stage-2, due June 2028 | ComSoc |
+| Spec freeze | 2029 | Qualcomm |
+| Commercial | estimate: first networks late 2028 to early 2029, worldwide 2029 to 2030 | arXiv 2407.09398 (estimate, not a commitment) |
+| Radio | one new, non-backward-compatible 6G radio; bandwidths 3 to 400 MHz; 5G channel codes largely reused | Rel-20 highlights; ComSoc |
+
+Sources disagree slightly in wording on freeze milestones; quote the 3GPP page itself. Plain meaning of "non-backward-compatible": the 6G radio does not have to work with old devices, so 5G and 6G will run side by side for years; old LTE-M and NB-IoT devices stay in the field (suggestion).
+
+#### C. Technology notes
+- **Reviews of early 3GPP work:** AI has become a primitive across every stage; non-terrestrial access has moved from overlay to substrate (arXiv 2610.05694, abstract level).
+- **ISAC (radio also senses like radar):** 23 ISAC use cases accepted in Rel-20 6G studies; Rel-20 5G-Advanced includes UAV sensing with a base station in monostatic mode; ISAC over NTN is not in the Rel-20 SA2 6G study scope (arXiv 2604.11593). Use cases from 3GPP SA1: factory robot guidance, contactless health monitoring. Link to us (suggestion, untested): sensing could become an extra viewer; sensing also raises privacy risk.
+- **Ambient IoT (battery-free, energy harvesting):** Rel-18 study, Rel-19 study plus work item (indoor inventory and command), Rel-20 extends to higher-power device types (up to a few hundred microwatts) and outdoor cases (arXiv 2312.06569, 2506.11828, 2412.21077). No security analysis of ambient IoT found.
+- **Digital twin:** real-time mirror of the network used to simulate and test decisions before deploying them (arXiv 2506.01609); what-if and policy experimentation (ATIS Next G panel, April 2026); survey splits passive monitoring twins from active control twins (arXiv 2608.12267). A network twin simulates the network; our world model simulates traffic reactions to defense actions (related, not the same).
+- **NTN:** satellites as part of the same network; see correction 3.
+
+#### D. 6G security literature (READ at abstract level; VERIFY full text)
+| Work | What it does | Relation to our work |
+|---|---|---|
+| Barua et al., unified security and privacy framework for AI-native 6G (arXiv 2607.01019, Jul 2026) | cross-layer threat taxonomy (includes identity spoofing, adversarial AI in zero-trust, key compromise) | supports Backup D and the spoofing thread |
+| Hussain et al., AI-native closed-loop security for 6G cyber-physical systems (arXiv 2606.08173, Jun 2026, survey of 128 studies, submitted to IEEE COMST) | sense, detect, mitigate, learn loop at edge and radio tiers | conceptually closest to "believe and act"; operator and CPS focus; read full text |
+| Damasceno et al., zero-day attack detection in 6G with tree-based models (SMC 2026) | notes aggregate metrics can hide poor zero-day performance and single datasets limit generalization | supports the held-out-family and cross-dataset protocol |
+| Siamese + PPO zero-day IDS (arXiv 2609.26115) | already in roadmap | main "zero-day + PPO" overlap |
+| MARL anomaly detection over 6G V2X (MUET) | MARL on 6G vehicular network | not IoT-home; related work |
+| Edge learning for 6G-enabled IoT survey (arXiv 2306.10309) | centralized, federated and distributed learning for 6G-IoT security | supports Paper 2 motivation |
+
+**Datasets:** no 6G-native labeled attack dataset found. 6G papers use existing ones (Kitsune, 5G-NIDD, UNSW-NB15, CSE-CIC-IDS2018). This confirms the dataset map: 6G is a portability test, not the base.
+
+#### E. What is safe to use, and where
+| Use | Where | Safe wording (suggestion) |
+|---|---|---|
+| Motivation: 6G will connect massive numbers of constrained IoT devices (ambient IoT in 3GPP) that cannot run defenses on board | proposal introduction | cite the 3GPP ambient-IoT work; avoid density numbers until TR 38.914 is read |
+| New networks have no attack history, so novel attacks are the normal case | Paper 1 motivation | my reasoning; label as an argument, not a finding |
+| Federated learning and digital twins are recognized 6G themes | Paper 2 and extension motivation | cite the surveys above |
+| Cross-slice and cross-segment lateral movement | Paper 3 related work | Andreou et al. 2025 (CTDE cross-slice 6G, from earlier roadmap, VERIFY) |
+| Adversarial AI as a 6G threat | Backup D | cite Barua et al. |
+| Portability claim | title and abstract | "access-technology-agnostic, evaluated on Wi-Fi/IoT and 5G data, 6G as a motivating future case" |
+
+**Do not claim:** that 6G is deployed or has data; any speed, delay or density number (not retrieved); that no 6G security work uses RL or belief (closed-loop and RL papers exist); "first" for anything in 6G security before the database sweep.
+
+#### F. Positioning against 6G AI-native security
+Operator-side AI security works on the network's view (call records, radio tiers). Our agent works at the home or device level with a belief, an explicit unknown state and graded response. In the snippets read, none combines these for IoT, but this is abstract-level only. Position the work as a response layer that complements the network's own AI, not a replacement.
+
+#### G. Open items
+1. Read TR 38.914 and the 3GPP Rel-21 timeline page; fix the requirement numbers (speed, delay, density) with sources.
+2. Read Hussain et al. (closed-loop, arXiv 2606.08173) and Barua et al. (arXiv 2607.01019) in full; check whether any belief or unknown-state layer exists.
+3. Search 6G or 5G/6G IoT security work using POMDP, belief, evidential or federated RL (database sweep, with the query strings from earlier updates).
+4. Check ambient-IoT security and any 6G testbed or dataset again (5G-NIDD only so far).
+5. Verify Starlink and 3GPP NTN delay figures and direct-to-device IoT status.
+6. Decide where 6G sits: motivation paragraph, portability experiment (train on Wi-Fi/IoT, test on 5G-NIDD), or Paper 3 environment.
+7. Carry forward all open items from earlier sections.
+
+   
