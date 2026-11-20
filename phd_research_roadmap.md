@@ -6049,3 +6049,206 @@ Operator-side AI security works on the network's view (call records, radio tiers
 7. Carry forward all open items from earlier sections.
 
    
+---
+---
+
+# UPDATE — 20 November 2026 (continued; new sections only; everything above is unchanged)
+
+Three sections on 6G. Section 125 = what is known (sourced). Section 126 = literature motivation and assumptions. Section 127 = what we have in hand and how to link the thesis to 6G. This replaces the earlier draft Section 125. Verification: READ = text seen directly; ABSTRACT = abstract or snippet only; VERIFY = check before citing. Items marked (suggestion) are my reasoning, not findings.
+
+---
+
+## Section 125 — KNOWN: sourced facts about 6G (3GPP TR 38.914, NTN, ISAC)
+
+### 125.1 The document and timeline (READ)
+- 3GPP TR 38.914 "Study on 6G Scenarios and Requirements", Release 20, current version V20.1.0 (2026-09). Change history: v1.0.0 approved at RAN#112 (June 2026), 20.0.0, then an editorial-only 20.1.0 at RAN#113.
+- It is a requirements document: it specifies targets, not algorithms. 3GPP says it can be shared with ITU-R as input to IMT-2030.
+- Release 21 timeline agreed in June 2026 and carries the first normative 6G work (C114 report, secondhand). Open architecture and migration points were pushed to RAN#113 (Sept 2026, Madrid); I did not check what was decided. Spec-freeze and commercial dates remain estimates.
+
+### 125.2 Numbers fixed from the report (READ)
+| Item | Value |
+|---|---|
+| Connection density | minimum 10^6 devices per km² (urban massive-connection scenario) |
+| User-plane latency | 4 ms (immersive), 1 ms (hyper-reliable low-latency); one-way, radio only, unloaded |
+| Control-plane latency | 20 ms |
+| Peak data rate | 36 Gbit/s down, 18 Gbit/s up (theoretical) |
+| Reliability | 1 − 10^-5 for 32 bytes within 1 ms (indoor factory) |
+| Sensing | detection probability 95%, false-alarm probability 5% (indoor factory, urban macro); localization 2 m (factory), 5 m (urban macro); velocity 2 and 4 m/s |
+| Bandwidth | at least 400 MHz maximum; operation supported down to a 3 MHz allocation |
+| Massive IoT (5.4.3) | FR1; at least 10 Mbps each way for the lowest-tier device; should not overlap Ambient IoT and NB-IoT; must coexist with NB-IoT and eMTC (LTE-M); no 2G/3G interworking |
+| Lowest-tier device | 1 antenna; 20 MHz baseband and RF bandwidth |
+| NTN orbits | VLEO (300–600 km) up to GSO; transparent or regenerative payload; TN and NTN design to be harmonized |
+
+Do not use the 1 ms and 4 ms figures as hub-to-cloud delay: they are radio-interface targets only.
+
+### 125.3 What the report says about security, privacy and AI (READ)
+- Security (5.3.7): only integrity and confidentiality protection of control-plane and user-plane traffic over the air interface. Nothing on behavior-based detection of compromised devices.
+- Privacy (5.2): collection of AI/ML and sensing data must be under operator control, with user consent, privacy and anonymity preserved.
+- AI (5.1.18, 5.4.5): two directions, "Network for AI" (the network helps AI applications) and "AI for network" (AI improves the radio). Both are "should", with no numeric KPI. 5.4.5 is stronger: the architecture shall support efficient mechanisms for AI applications and shall support a lifecycle-management (LCM) framework. LCM is named but not defined in the report.
+- Sensing (5.4.4): shall support detection and tracking of passive objects (UAV, human, vehicle, AGV); the sensing target is not connected to the network.
+- The terms "digital twin" and "belief" do not appear in the sections I read (the document text was complete).
+
+### 125.4 Starlink (Direct-to-Cell) vs 3GPP NTN — what is established
+Technology only, not about any person. Main source: Wang et al., arXiv 2605.05843 (May 2026, TU Kaiserslautern/DFKI), full text read. One paper plus trade blogs; some of its figures have no clear source (VERIFY).
+- **Direct-to-Cell (D2C), Starlink and AST SpaceMobile:** market-driven overlay that uses existing terrestrial mobile spectrum leased from operators (US FCC "supplemental coverage from space" framework) and unmodified 4G/5G handsets. Each satellite acts as a moving base station ("space tower").
+- **3GPP NTN (Rel-17 to Rel-19):** standards-based, dedicated satellite spectrum (S-band, L-band, later Ka), needs NTN-aware chipsets, supports NB-IoT and eMTC over satellite, transparent and regenerative payloads.
+- **The paper's comparison figures (VERIFY):** D2C latency 150–250 ms gateway-routed, 50–100 ms with inter-satellite links; NTN about 60 ms transparent, about 25 ms regenerative with inter-satellite links; uplink link margin 7.2 dB (D2C) vs 10.2 dB (NTN) in its own example budget.
+- **Security (paper, citing two IEEE S&P papers; secondhand):** D2C has location leakage through timing-advance side channels and IMSI-catcher-style risks; NTN adds satellite-specific authentication.
+- **Commercial status (trade sources, VERIFY):** about 650 Starlink direct-to-cell satellites and roaming in 32 countries (March 2026 trade blog); a battery-powered IoT tracker connected to Starlink D2C via One New Zealand (Feb 2026, vendor press release); Starlink states IoT is part of its D2C roadmap.
+- **Correction flag:** that paper's release table labels Release 20 as "full 6G NTN integration, planned 2028". 3GPP's own pages (above) say Rel-20 is the 6G study plus 5G-Advanced, and Rel-21 carries the first normative 6G. Do not copy that table.
+- **Plain difference:** D2C = a satellite pretending to be a cell tower for ordinary phones; NTN = a standard that treats the satellite as part of the network, with devices built for it. 6G aims to harmonize terrestrial and non-terrestrial (report 5.4.13), so the two are expected to converge, not compete forever.
+
+### 125.5 ISAC (integrated sensing and communication) — what it is
+- Plain picture: the network's radio signals bounce off objects, and the network reads the echoes like a radar while still carrying data. A base station can notice a drone or a person moving without that person carrying a phone.
+- 6G reports sensing KPIs in radar language (detection probability, false alarm, localization, velocity), see 125.2.
+- Privacy (Günlü et al., arXiv 2605.28325, ABSTRACT): sensing-derived data sorted into three levels: location and environment, behavior, physiology; challenges include consent, transparency, data ownership, profiling and exposure of bystanders.
+- Security (Thapa and Nepal, arXiv 2601.01455, ABSTRACT): the dual-function waveform creates new risks, such as sensing targets acting as eavesdroppers; the security goal shifts toward trustworthiness of physical perception, not only data confidentiality.
+- "Not Until It Is Secure" (arXiv 2503.15243, ABSTRACT): current security methods mostly protect the communication channel and overlook the sensing side.
+
+### 125.6 Digital twins in 6G — what is known
+- Used to monitor, simulate and test policies and AI models before deployment (O-RAN security review, arXiv 2603.21211).
+- Same review: twins add attack surface. If the synchronization link is poisoned, replayed or time-distorted, the twin drifts from the real network and gives wrong risk assessments or unsafe control decisions.
+- Model-poisoning attacks on distributed network twins are demonstrated, with a proposed defense (Zhang et al., IEEE IoT-J 2024).
+- A digital-twin survey lists data tampering, low-quality data and desynchronization as twin threats (arXiv 2301.13350).
+- Precedent for twin plus POMDP: Hammar and Stadler's CSLE platform estimates its observation distributions from digital-twin data (arXiv 2604.15590, ABSTRACT level).
+
+### 125.7 Corrections to earlier notes
+1. Radio bandwidth: "3 to 400 MHz" (Section 124) → at least 400 MHz maximum bandwidth, with a 3 MHz minimum allocation supported.
+2. "6G AI is mostly for performance, not security": the report frames AI as "AI for network" and "network for AI" with no security-specific AI requirement.
+3. Starlink delay was earlier given from memory; now only the paper's figures above, still VERIFY.
+4. The "security layer that tests graded actions" is the roadmap's digital twin, not a 6G AI feature.
+
+---
+
+## Section 126 — LITERATURE MOTIVATION AND ASSUMPTIONS (what supports the thesis, and what is only assumed)
+
+### 126.1 Motivation we can use (with the evidence level)
+1. **Link protection is not behavioral protection.** The radio security requirement covers integrity and confidentiality over the air; a compromised but authenticated device is outside it (reading of 5.3.7; quote the clause exactly).
+2. **Massive IoT keeps growing and stays heterogeneous.** 10^6 devices/km² target; 6G IoT is a mid-tier class, while NB-IoT, LTE-M and ambient IoT remain separate. Fleet scale and mixed device types are in the standard's own scenarios.
+3. **New networks have no attack history.** My argument, not a finding: a new protocol or access type has no labeled attacks, so novel attacks are the normal case (supports Paper 1).
+4. **Privacy and data minimization have a standards-side anchor.** The privacy and operator-control principle for AI/sensing data supports "raw traffic stays local". It does not endorse federated learning.
+5. **AI lifecycle management is a recognized requirement.** Our train, shadow-check, release gate, rollback cycle is an instance of lifecycle management (analogy until the 3GPP LCM text is read).
+6. **Satellite IoT is arriving.** NTN supports NB-IoT and eMTC; D2C trackers are demonstrated. Satellite-reached devices are remote, unattended and behind long links, which favors local decision-making (suggestion).
+
+### 126.2 Weaknesses of the 6G story and how the thesis answers each
+| Potential weakness | Evidence | How the thesis fixes it or complements it | Honest limit |
+|---|---|---|---|
+| "AI for network / network for AI" sounds like marketing | 5.1.18 is "should" with no numeric KPI; LCM is named but undefined | Treat as a placeholder; use only 5.4.5's concrete clauses (efficient AI mechanisms, LCM, privacy-preserving data collection) | We cannot claim 3GPP specifies AI security |
+| 6G AI is itself an attack surface | GenAI/federated-learning poisoning in 6G (Son et al., ABSTRACT); twin and model poisoning (Zhang et al.) | Release gate (shadow mode plus twin test), frozen viewers, Byzantine-robust belief fusion as backup | Our own core papers exclude training poisoning from the threat model |
+| Twin drift and simulation trust | O-RAN review; twin survey; the earlier MMPP dataset rejection | Calibrate the MMPP and action effects on real traces; use the twin for training augmentation only; final results on real held-out data; on-device shadow mode as an independent check that does not rely on the twin | Action effects are assumed (CICIoT2023 is passive) |
+| The home scenario is not 6G-native | A Wi-Fi/Zigbee hub reaches 6G via fixed wireless access or a cellular uplink (report 5.4.8) | 6G is the motivating future case; the agent is access-technology-agnostic; evaluate on Wi-Fi/Zigbee and 5G data | No 6G dataset exists |
+| 6G radio latency numbers invite misuse | Radio-only, unloaded | Our latency tests use end-to-end timing; detection delay dominates (Update 17) | Timings still assumed |
+| Federated learning is not private | Update leakage is known | State privacy narrowly; optional secure aggregation or DP arm | No formal guarantee |
+| ISAC adds data the thesis does not cover | Sensing data is a new privacy class | Say explicitly that raw-traffic locality does not cover sensing data; sensing is a possible extra viewer later | Out of core scope |
+| Satellite links change timing | D2C 150–250 ms, NTN tens of ms (paper, VERIFY) | Still small next to detection delay in our latency model (Update 17); supports a local agent | Needs measured values |
+
+### 126.3 "No belief algorithm" — the careful version
+- TR 38.914 is a requirements document and names no algorithm for anything, so its silence proves nothing.
+- Belief-based defense already exists in general cyber defense: POMDP intrusion response (Hammar and Stadler line, including an OT intrusion-response paper, arXiv 2609.10298, authors not captured), BF-PPO (Le and Stadler, CAGE-2, particle-filter belief), and Q-BIRD (non-Bayesian amplitude belief with PPO, vehicular).
+- What I did not find, in this first-pass web search: belief-based defense in the 6G/IoT security papers read, with an explicit unknown-attack state. Safe wording: "not found in the 6G security work I reviewed", never "6G has no belief algorithm".
+- Still unread in full: Hussain et al. (6G closed-loop security, 2606.08173) and Barua et al. (6G AI-native security, 2607.01019). They are the most likely to change this wording.
+
+### 126.4 Assumptions we are making (flag each in the thesis)
+1. 6G motivation is future-looking: no 6G deployment, dataset or attack record exists.
+2. A home hub bridging Wi-Fi and Zigbee remains a valid scenario in 6G-era homes.
+3. Novel attacks will be common on new access technologies (argument).
+4. Pivot speed and satellite timing are scenario parameters, not measurements.
+5. The 10^6/km² and sensing numbers are evaluation targets, not deployed performance.
+6. Starlink/NTN figures come from one comparison paper and trade sources.
+7. Twin results are simulated evidence until validated on real held-out data.
+
+### 126.5 Corrections found in this round
+- **Q-BIRD title:** arXiv 2606.07796 currently shows the title "Belief-Space Quantum-Inspired Reinforcement Learning for Partially Observable Autonomous Cyber Defense in the Internet of Vehicles" (method name Q-BIRD); earlier notes used a different title ("Amplitude-Belief …"). Verify against the arXiv page before citing. It reports that earlier IoV defenses used classical Bayesian belief models, which supports a "non-Bayesian belief" slot, relevant to our DS belief.
+- The Wang et al. release table conflicts with 3GPP's own timeline (see 125.4).
+
+---
+
+## Section 127 — WHAT WE HAVE IN HAND, AND HOW TO LINK THE THESIS TO 6G
+
+### 127.1 Assets we already have (map to 6G themes)
+| Our asset | Where it came from | 6G link |
+|---|---|---|
+| Belief-driven agent, explicit unknown state, graded ladder | Papers 1 and belief sessions | Response layer for behavioral compromise, which radio security (5.3.7) does not cover |
+| Federated training, non-IID study | Paper 2 | "Network for AI": periodic weight updates the network must carry; privacy principle in 5.2 |
+| Release gate: twin test plus on-device shadow mode, rollback | Update 12/13 notes | Matches AI lifecycle management (5.4.5); shadow mode guards against twin drift |
+| Cross-protocol pivot defense | Paper 3 | Heterogeneous access (Wi-Fi, Zigbee, cellular, satellite) behind one hub |
+| Access-technology-agnostic features | Dataset design principle | Portability: train on Wi-Fi/IoT, test on 5G-NIDD, 6G as future case |
+| Latency kill test | Update 17 | Satellite and cloud links add tens to hundreds of ms; detection delay still dominates |
+| DS belief with Omega, K, U | Belief sessions | Fits "behavior of authenticated devices is not what the radio checks" |
+| Radar background (Pd, Pfa, birth/death/clutter) | Earlier LMB and identity work | Same vocabulary as 6G sensing KPIs; possible sensing viewer (extension) |
+| Byzantine-robust belief fusion (backup) | Candidate 2 | Answers poisoning of AI in the network and of federated updates |
+
+### 127.2 Where 6G sits in the thesis (recommendation, suggestion)
+- Introduction: one motivation paragraph (126.1).
+- Paper 1: novelty argument for new networks (item 3), cited as an argument.
+- Paper 2: "network for AI" framing of federated rounds; measure bytes per round (Idea 16 break-even).
+- Paper 3: heterogeneous access behind a hub; satellite as one more access type in the threat model.
+- Evaluation: portability test Wi-Fi/IoT to 5G-NIDD; 6G only as a stated future case.
+- Not Paper 3's environment and not a dataset claim.
+
+### 127.3 The twin — the important part
+1. **What the twin is for us:** a simulator of the home and its traffic where defense actions can be tried safely; it supplies the interactive environment that static datasets cannot (Paper 1 environment) and is also the server-side half of the release gate.
+2. **Why it is a weak point:** (a) simulation trust, the same objection as the earlier MMPP dataset; (b) twin drift if its data feed is poisoned or stale; (c) the twin itself becomes an attack surface.
+3. **How the design answers it:** calibrate MMPP and action effects against real traces; keep the twin as training augmentation, never as the final proof; final numbers on real held-out data; independent on-device shadow mode so a drifted twin cannot approve a bad model alone; report per-home results.
+4. **Precedent:** Hammar and Stadler's platform builds its POMDP observation distributions from a digital twin; 6G twin literature shows the same pattern at network level.
+5. **Open:** how the twin is refreshed from real data without opening a poisoning path.
+
+### 127.4 AI weakness — the honest version
+- 6G AI (and ours) can be attacked: poisoned training data, poisoned federated updates, manipulated twin data, evasion by an adaptive attacker.
+- Our core papers currently exclude training poisoning and attacks on the belief channel. That must be stated as a limit, with Backup D (robustness of the defender) and Candidate 2 (lying beliefs) as the planned extensions.
+- The adaptive-mimicry attacker has not been tested against the toy filters or the belief module.
+
+### 127.5 Radar-like ISAC and the thesis (suggestions, untested)
+- Same language as our radar background (detection, false alarm, localization, tracking); the earlier PMB/LMB identity line used the same ideas.
+- Possible later viewer: sensing-derived presence or motion as an extra independent evidence source in the belief panel.
+- Risk: sensing data is more privacy-sensitive than traffic summaries, so federation does not make it harmless; the privacy claim must stay narrow.
+- Not in the core plan: our scenario is a home hub, not a base station.
+
+### 127.6 Privacy — wording to use
+"Raw traffic stays on the device or hub (data minimization). No formal privacy guarantee is claimed. Federated updates can leak information, and 6G sensing data (location, behavior, physiology) is an additional privacy class not covered by this work."
+
+### 127.7 Starlink vs 6G NTN — how it touches the thesis
+- Satellite-reached IoT devices are remote and unattended: a local agent that keeps a belief fits better than one that needs a cloud round trip (suggestion).
+- Satellite and cloud links add delay, but our latency test says detection delay is the dominant term; measure real satellite round trips before claiming anything.
+- D2C and NTN will converge (report 5.4.13; Wang et al.), so the agent should not assume one access type: another reason for access-agnostic features.
+- Security difference (D2C location leakage vs NTN authentication, secondhand) is a motivation for a behavioral layer; not a result of ours.
+
+### 127.8 Presentation ideas (slides)
+1. **6G in one slide:** what is fixed (TR 38.914, June 2026) and what is not (security algorithms, AI mechanisms).
+2. **The gap slide:** radio protects the link, nobody checks behavior of authenticated devices.
+3. **AI cuts both ways:** 6G AI helps and is itself an attack surface (poisoning, twin drift); our release gate and shadow mode answer it.
+4. **Federated rounds are AI traffic:** network for AI; bytes per round as a measured cost.
+5. **Twin slide:** what it gives, how it can drift, how we validate on real data.
+6. **ISAC slide:** radar-like sensing, a new privacy class, scoped out of the core.
+7. **Satellite slide:** D2C vs NTN in two lines, with the timing caveat.
+8. **Honest limits slide:** no 6G dataset, assumed timings, no "first" claims.
+
+### 127.9 Likely committee questions (short answers)
+| Question | Answer |
+|---|---|
+| Is this about 6G? | No. The agent is access-agnostic; 6G is the motivating future case and a portability test on 5G data. |
+| Isn't "AI for network" already covering security? | In TR 38.914 it targets radio performance and has no security requirement; I quote the clauses and do not claim more. |
+| Isn't your twin just a simulator you trust? | Calibrated to real traces, used for training only, final results on real held-out data, plus an on-device shadow check. |
+| What if the AI itself is attacked? | Stated limit; backup contributions cover poisoning and lying beliefs. |
+| Why not use the 6G network's own AI? | It optimizes the radio; our agent responds to device compromise at the home level. They complement. |
+| Do 6G latency numbers help your latency argument? | No: they are radio-only; our test uses end-to-end timing. |
+| Does ISAC threaten your privacy claim? | Yes, a new data class; stated as outside the claim. |
+
+### 127.10 Forgotten or newly flagged points
+1. A bandwidth cap works against floods but not exploits or botnets; this is why the agent reads behavior.
+2. The 6G radio numbers are not end-to-end numbers.
+3. Home hubs are not 6G-native; 6G reaches them via fixed wireless access or cellular uplink.
+4. The report has no numeric AI target; treat "AI" clauses carefully.
+5. Wi-Fi sensing in homes exists as an idea, but I did not verify it here; do not mention it without a source.
+6. Starlink-type satellite internet (dish plus router) and 3GPP NTN for small devices are different things; keep them apart in the text.
+7. The earlier Q-BIRD title mismatch needs checking.
+
+### 127.11 Open items
+1. Read Hussain et al. (2606.08173) and Barua et al. (2607.01019) in full; search again for 6G IoT security work with belief, POMDP, evidential or federated RL (database sweep).
+2. Read the 3GPP LCM description to source the lifecycle stages.
+3. Check RAN#113 outcomes (architecture, migration).
+4. Verify the Starlink and NTN figures and the Wang et al. security claims against the IEEE S&P papers it cites.
+5. Verify the Q-BIRD title and the OT intrusion-response paper (arXiv 2609.10298) authorship.
+6. Measure real satellite and hub round-trip times before using them in the latency model.
+7. Decide whether ISAC sensing stays an extension or is dropped from the plan.
+8. Carry forward all open items from earlier sections.
