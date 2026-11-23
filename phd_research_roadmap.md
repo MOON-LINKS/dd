@@ -6625,3 +6625,121 @@ Add to the offline belief tests (Section 63, Section 46):
 4. Decide whether possibility is used only as a fusion arm or also as the converter for number-output viewers.
 5. Carry forward all open items from earlier sections, including Sections 66, 92 and 122.
 6. Next study (suggested order): the postponed Session 1 decisions, then Session 3 (PPO vs DQN plus the formal belief-in-PPO recap), then world models and MBRL, then experiment design.
+
+
+---
+---
+
+# UPDATE — 23 November 2026, Part 3 (new sections only; everything above is unchanged)
+
+Today: a literature check on whether anyone compared PPO, DQN and DDQN with a belief algorithm in a POMDP for zero-day attacks in IoT, and the decision to record this as a **candidate second conference paper**. Items marked (suggestion) are mine, not decisions. Items marked (verify) have not been checked against full text. Verification levels: SNIPPET = a search snippet or abstract only; none of the papers below was read in full.
+
+## 134. Where this sits: two conference papers, one dependency
+
+| | Conference paper 1 (first) | Conference paper 2 (this candidate) |
+|---|---|---|
+| Question | Which **belief algorithm** is best for novel (zero-day) attacks in a POMDP? | Which **RL algorithm** (PPO, DQN, DDQN, and variants) works best on top of a belief, for the same problem? |
+| What varies | The belief: Bayesian (with and without U), Dempster, Yager, TBM, possibility, subjective logic, EDL, fuzzy as converter (Sections 8, 28, 81, 129 to 132) | The learning algorithm: PPO, DQN, DDQN, plus memory and multi-agent variants |
+| What is fixed | Viewers, environment, reward, ladder, held-out protocol | The belief (the winner or top two from paper 1), the environment, reward, ladder, held-out protocol |
+| Output | A ranked comparison of belief algorithms (novelty AUROC, false alarms, known accuracy, calibration, cost) | A ranked comparison of RL algorithms with the same belief (return, containment time, false isolation, sample efficiency, cost) |
+
+**Dependency:** paper 2 uses paper 1's result to fix the belief. If paper 1 shows no clear winner, paper 2 runs on the top two (suggestion). The same environment, viewers, reward and evaluation protocol are reused, so the engineering is shared.
+
+**Relation to the earlier conference-paper idea (Sections 98 to 100):** that idea was "does the evidential belief help beyond memory (G1 to G5)". It overlaps with both new papers. Open decision: does the G1 to G5 grid (memory vs belief) become part of paper 2, a third short paper, or an ablation inside paper 1? (suggestion: keep the belief-vs-memory arms inside paper 1 as a control, and keep paper 2 purely about the RL algorithm.)
+
+## 135. Candidate paper 2: the idea
+
+**Working question:** with the belief fixed, does the choice of RL algorithm change containment of novel attacks, false isolations and cost, and does the answer change when the data is scarce (a new home), when the policy has memory, or when several agents are used?
+
+**Why it is not obvious:**
+- Papers that compare PPO and DQN in security mostly use no belief and mostly report PPO winning (section 136), but one smart-grid study reports DQN training much faster.
+- Belief is almost always paired with PPO in the papers found, so "DQN or DDQN with a belief input" appears to be an unfilled slot (not found in a limited search).
+- DQN reuses old experience (off-policy), so it may win when real data is scarce; PPO is usually more stable. Which effect dominates here is an open empirical question.
+
+**Arms (suggestion):**
+
+| Arm | Learning algorithm | Memory | Policy receives | Purpose |
+|---|---|---|---|---|
+| P1 | PPO | none | fused belief | the reference (same as G3) |
+| P2 | PPO | recurrent (LSTM; GRU as ablation) | fused belief | memory on top of belief (same as G4) |
+| D1 | DQN | none | fused belief | the main challenger |
+| D2 | DDQN | none | fused belief | fixes DQN's value over-estimation |
+| D3 | DRQN or recurrent DDQN | recurrent | fused belief | recurrent value-based arm (recurrent Q-learning is built for partial observability, per the Q-BIRD baseline description) |
+| N1 to N3 | PPO, DQN, DDQN | none | **no belief** (window features and last action only) | measures how much of each algorithm's result comes from the belief |
+| R | rule-based threshold on m(U), Omega, K | none | belief | non-RL baseline; RL must beat it |
+| O | PPO | none | oracle (true state) | upper bound, simulation only |
+
+**Possible extension arms (suggestion, only if time):** IPPO, MAPPO, independent DQN and QMIX-style value decomposition for the per-protocol agents (Paper 3 territory; not needed for a first paper 2). Multi-agent versions of DQN and DDQN exist (independent Q-learning, value-decomposition methods; names from memory, verify).
+
+**Two data regimes (the important design choice):**
+1. **Plenty of simulated data:** shows steady-state quality and stability.
+2. **Limited real data** (a new home, a few days of traffic): where DQN's reuse of old experience could help. This is the regime where an off-policy method has a real chance, and where the earlier MBRL argument also lives.
+
+## 136. What the literature check found (4 searches, SNIPPET level; verify)
+
+**Not found:** any paper that compares PPO, DQN and DDQN, each with a belief state, in a POMDP for zero-day attacks in IoT. This is "not found in a limited search", not proof of absence.
+
+**1. PPO vs DQN for zero-day in IoT, no belief:**
+- Hossain et al., cross-dataset zero-day IDS with a Siamese network and RL (arXiv 2609.26115; ICT Express 2026 per a secondary citation): PPO 99.07% accuracy, 93.94% zero-day detection, 0.50 ms; DQN 98.8%, 93.1%, 0.65 ms; SAC 96.32%, 84.1%. The text calls DQN cheaper in memory and faster to train but prone to value over-estimation, and says PPO converged most stably. **Inconsistency to check:** the text quotes a 7.57% lower unseen accuracy for DQN, while the table gap is much smaller; read the full text before using either number.
+- Alemayehu et al., real-time DDoS detection in industrial IoT (preprint 202601.0081, **not peer-reviewed**): DQN, Double DQN, Duelling DQN, DDPG and PPO on KDDCup99, CIC-DDoS2019 and Edge-IIoT; PPO reported faster to converge and more sample-efficient. Binary detection, not a POMDP.
+- HoneyIoT (arXiv 2305.06430): PPO converged fastest and earned the best average reward among the algorithms tried. Honeypot task, not a belief POMDP.
+- The author of a DQN-based IoT IDS (J. Intell. Informatics, Networking and Cybersecurity, Univ. of Babylon) argues DQN suits binary instantaneous decisions and that PPO's complexity is not needed there (an author's opinion, not a comparison).
+
+**2. Belief with PPO, DQN used only as a baseline:**
+- Q-BIRD (arXiv 2606.07796; v1 titled "Belief-Space Quantum-Inspired Reinforcement Learning for Partially Observable Autonomous Cyber Defense in the Internet of Vehicles", later version "Amplitude-Belief Reinforcement Learning for Adaptive Cyber Defense in Partially Observable V2X Networks"): baselines DQN, DRQN, PPO without belief, PPO-LSTM, PPO with Bayesian belief; belief is attached only to PPO; V2X, not IoT. Reported damage 36.0 to 28.0 vs PPO with Bayesian belief.
+- Belief aggregation and rollout (arXiv 2507.15163, Hammar and Stadler's group, authors not verified): estimates a belief and compares against Cardiff, C-POMCP, PPO, PPG, DQN; says its method needs less offline compute than the deep RL methods.
+- OT intrusion response (arXiv 2609.10298): PPO and BF-PPO (particle-filter belief). No DQN arm seen.
+- Penetration-testing partial observability study (arXiv 2509.20008): PPO variants (frame stacking, history, recurrent, transformers) against vanilla PPO with per-algorithm hyperparameter search. Offense, PPO only.
+
+**3. DQN-family agents that use uncertainty or memory as input:**
+- DQN-IDS (NDSS-hosted paper, Tiwari et al.): CNN features plus a DQN whose state is softmax confidence, probability gap and entropy; open-set known vs unknown on CICIDS-2017 and UNSW-NB15; reported binary F1 97.8%. Uncertainty as a state feature, not a belief filter.
+- DeepEdgeIDS and AutoDRL-IDS (arXiv 2511.18240): autoencoder anomaly score feeding a DQN, and an LSTM-DQN.
+- DRQN-CMDP audit scheduling (arXiv 2607.17305): a GRU layer in a dueling double Q-network that maintains a belief over a hidden node type, compared with PPO among 13 methods. Closest design to "value-based agent with belief", but a blockchain-audit domain; results not seen.
+
+**4. DQN can beat PPO on some axes:** ROAM, smart-grid moving-target defense (arXiv 2610.12730): DQN trained substantially faster (up to 4.5 times on the largest system) and chose a different defense posture; PPO and DQN were compared on an identical task. Not IoT, not zero-day.
+
+**Pattern (my reading):** in security comparisons that include both, PPO usually wins on stability and zero-day quality; DQN wins on training speed and memory. Belief is almost always paired with PPO. Value-based agents with a belief input look under-explored.
+
+## 137. Novelty wording and the "do not claim" list
+
+**Do not claim:**
+- "First comparison of PPO and DQN for zero-day IoT defense" (Hossain et al. and others).
+- "First belief-based PPO for cyber defense" (BF-PPO, Q-BIRD).
+- "First DRL agent with an uncertainty-state input" (DQN-IDS).
+- "First recurrent value-based agent for a security POMDP" (the audit-scheduling paper, and DRQN used as a baseline in Q-BIRD).
+
+**Safer wording (suggestion, still hedged):** "To our knowledge, the first controlled comparison of PPO, DQN and DDQN agents that share one fused evidential belief, evaluated on held-out attack families in an IoT-defense POMDP." It rests on four searches, so run the database sweep before using it.
+
+## 138. Fairness rules, hypotheses and risks
+
+**Fairness (same lessons as before):**
+- The environment, reward, ladder, step size and episode rules are frozen and identical for every arm.
+- Equal tuning budget, same search ranges, grid-edge check on every tuned value; PPO and DQN have different knobs (PPO: learning rate, clip, epochs, batch; DQN: replay size, target-update interval, exploration schedule), so give each family a comparable budget and report it.
+- At least 10 seeds, bootstrap intervals, separate tuning and evaluation seeds, held-out families never used for tuning.
+- Report cost as well as quality: real steps to reach a target return, wall-clock, inference time on hub-class hardware, memory (replay buffer size counts).
+- A strong recurrent baseline is needed (a reviewer will attack an under-tuned recurrent arm).
+
+**Hypotheses to pre-register (not results):**
+1. PPO is more stable and gives lower variance across seeds (literature pattern, not tested here).
+2. DQN or DDQN reaches a target return with fewer real steps in the limited-data regime.
+3. DDQN beats DQN (over-estimation fix), and the gap is small.
+4. Removing the belief hurts all three algorithms; the algorithm ranking may change with and without it.
+5. A hand-written rule on m(U), Omega, K may beat some RL arms; if so, say so.
+
+**Risks:**
+1. The best belief from paper 1 may be borderline; paper 2 then depends on a weak result.
+2. DQN's discrete actions fit the ladder well; PPO's advantage may shrink with a small action set (reasoning, verify).
+3. Off-policy replay with a belief that changes with the keep factor k can mix old and new belief semantics; keep the belief module frozen and identical during training.
+4. Simulation trust (action effects are assumed) applies equally to both papers.
+5. If results are close, the paper reduces to "the choice of algorithm barely matters with a good belief", a negative result that is still reportable.
+6. Overlap with the earlier G1 to G5 idea: avoid publishing the same result twice.
+
+## 139. Open items and next steps
+
+1. Decide the home of the G1 to G5 memory-vs-belief arms (inside paper 1, inside paper 2, or a third short paper).
+2. **Possible mix-up in earlier notes:** two different papers are called "DQN-IDS". Section 29 and the novelty tables describe a softmax-confidence-state DQN (the NDSS-hosted Tiwari et al. paper, CICIDS-2017 and UNSW-NB15), while the 16 November deep-search report attributes a family-held-out DQN-IDS to Alkasassbeh et al. (UGRansome). Verify which is which before citing either.
+3. Read in full: Hossain et al. (resolve the 7.57% vs table gap), the audit-scheduling paper (what the recurrent Q-network with belief achieves vs PPO), and the belief-aggregation paper (arXiv 2507.15163, confirm authors).
+4. Study DQN from zero (Q-value, replay memory, target network, Double DQN's fix) before building the DQN arms; then compare on-policy vs off-policy in the limited-data regime. (Planned Session 3.)
+5. Run the database sweep with queries such as: (DQN OR "Double DQN" OR DDQN) AND (belief OR POMDP OR "partially observable") AND (intrusion OR "cyber defense" OR IoT) AND ("zero-day" OR "unknown attack"); and PPO AND DQN AND (belief OR POMDP) AND IoT.
+6. Pick the target venue and timeline only after paper 1's environment and belief results exist (see Section 99 for the venue list; deadlines unverified).
+7. Carry forward all open items from earlier sections.
