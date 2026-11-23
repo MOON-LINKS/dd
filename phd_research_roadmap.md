@@ -6743,3 +6743,143 @@ Today: a literature check on whether anyone compared PPO, DQN and DDQN with a be
 5. Run the database sweep with queries such as: (DQN OR "Double DQN" OR DDQN) AND (belief OR POMDP OR "partially observable") AND (intrusion OR "cyber defense" OR IoT) AND ("zero-day" OR "unknown attack"); and PPO AND DQN AND (belief OR POMDP) AND IoT.
 6. Pick the target venue and timeline only after paper 1's environment and belief results exist (see Section 99 for the venue list; deadlines unverified).
 7. Carry forward all open items from earlier sections.
+
+
+---
+---
+
+# UPDATE — 23 November 2026, Part 4 (new section only; everything above is unchanged)
+
+Today: a consolidated list of useful datasets, 2019 and later only, with attack and benign traffic. It merges what the roadmap already verified with five new searches run today. Verification levels: SEARCH = a snippet or abstract seen today; NOTES = verified earlier in this roadmap; MEMORY = my own knowledge, not checked. Nothing below was downloaded or inspected. Items marked (suggestion) are mine, not decisions.
+
+## 140. DATASET MAP (2019 and later)
+
+> **NOTE (important): this list is probably incomplete.** It comes from five snippet-level searches plus earlier notes, not from a systematic sweep. Datasets in new venues, 2025 to 2026 releases, and region-specific testbeds are the most likely to be missing. The double-check protocol is in 140.9. Do not state "no dataset exists for X" anywhere in a paper before that check is done.
+
+### 140.1 Filter and conventions
+- Included: datasets released or published 2019 or later. Excluded by the year filter: N-BaIoT (2018), Kitsune (2018), UNSW-NB15 (2015), CIC-IDS2017/2018, AWID2 (2016), the Car-Hacking dataset (listed as 2018).
+- Years differ between sources for some datasets (TON_IoT, Bot-IoT). Use the dataset's own paper for the final citation.
+- "States" here means two things: device operating states (power-up, idle, active) and attack stages (multi-stage scenarios). They are rare; see 140.7.
+
+### 140.2 A. IoT multi-device, attack and benign (the core group)
+
+| Dataset | Year | What it has | Info source |
+|---|---|---|---|
+| CICIoT2023 | 2023 | Real IoT traffic, flow-based; 7 attack categories. Notes: 105 devices, 33 attacks, per-device identifiers, free download | SEARCH + NOTES |
+| CIC IoT 2022 | 2022 | 81 IoT devices over Wi-Fi, Zigbee and Z-Wave (SEARCH). Earlier notes said about 60 devices, so the count conflicts. Attack coverage and labels unchecked | SEARCH + NOTES |
+| IoT-23 | 2020 | Labeled malicious and benign IoT traffic (Stratosphere) | SEARCH |
+| TON_IoT | 2019 to 2021 depending on source; main paper 2020 | IoT and IIoT, hybrid traffic, 9 attack types, flow and packet data | SEARCH |
+| Edge-IIoTset | 2022 | 14 attacks, 61 features, about 2.2M samples. Built for centralized and federated learning, so the Paper 2 candidate | SEARCH |
+| TII-SSRC-23 | 2022 to 23 | 8.6M bidirectional flows, 75 features, emulated testbed, raw captures plus statistics | SEARCH |
+| ACI-IoT-2023 | 2023 | IoT, hybrid, 4 attack types, flow and packet data | SEARCH |
+| MQTTset | 2020 | 33 features, 5 attacks, about 20M samples | SEARCH |
+| LATAM-DDoS-IoT | 2022 | 49M bidirectional flows, real and emulated, large IoT testbed; DDoS only | SEARCH |
+| MedBIoT | about 2020 (year not seen) | 80 simulated plus 3 real devices; botnets Mirai, BashLite, Torii | SEARCH |
+| CIC-BCCC-NRC TabularIoTAttack-2024 | 2024 | A derived collection that relabels nine earlier IoT datasets (2019 to 2024) as benign vs attack types. Convenient for cross-dataset tests, but derived, not raw | SEARCH |
+| CIC IoT-HCRL-2019 | 2019 | The 2019 IoT network intrusion dataset, listed in the same collection | SEARCH |
+| Gotham | year not seen | Large reproducible capture of real heterogeneous IoT device traffic | SEARCH (snippet only) |
+| Bot-IoT | 2018 data, 2019 paper | One table lists it as 2019 (73M flows); earlier notes said 2018. Borderline for the year filter | SEARCH + NOTES |
+| IoTID20, RT-IoT2022, CICIoV2024 | not checked | Possible extras | MEMORY |
+
+### 140.3 B. IIoT and industrial
+
+| Dataset | Year | What it has | Info source |
+|---|---|---|---|
+| X-IIoTID | 2021 | 820,834 instances (421,417 normal, 399,417 attack), 68 features, several label levels, connectivity- and device-agnostic | SEARCH |
+| WUSTL-IIoT | 2021 | 41 features, 4 attacks, about 1M samples | SEARCH |
+| DataSense | 2025 | Sensor-based IIoT testbed, benign and malicious traffic | SEARCH |
+
+### 140.4 C. Multi-protocol and radio (Wi-Fi, Zigbee, Z-Wave, BLE): the cross-protocol group
+
+| Dataset | Year | What it has | Info source |
+|---|---|---|---|
+| BCCC-IoT-IDS-Zwave-2025 (York) | 2025 | Five sources: IP traffic, Z-Wave data, device logs, MQTT traffic, MQTT logs; 81 IP classes and 24 Z-Wave classes; 20 TB, more than a billion records, over 110 devices, 88 attack scenarios | SEARCH |
+| York smart-home dataset (Shafi thesis) | 2024 | Over 50 devices, more than 100 attack scenarios, five months. Release status unknown (contact the author, check the CIC/UNB and York BCCC sites) | SEARCH + NOTES |
+| SHARP (Cardiff) | captured 2025, released Sept 2026 per notes | Wi-Fi and router traffic, Wi-Fi over the air, Zigbee, Z-Wave logs, telemetry from one home: 1,677 captures, 17 Z-Wave logs, about 4.4M telemetry records. Normal 20 June to 5 July 2025, attack campaign 13 August 2025. Subscription needed (notes). Cross-protocol attacks unverified | SEARCH + NOTES |
+| CICIoMT2024 | 2024 | Benign and attack captures for BLE, Wi-Fi and MQTT medical IoT devices, with train and test splits; 18 attacks on 40 devices (notes) | SEARCH + NOTES |
+| BLE advertisement dataset | 2026 | 12-hour benign baseline plus sessions of spoofed BLE spam at different intervals | SEARCH |
+| ZMAD Z-Wave traffic | about 2023 | Normal and attack traffic from known Z-Wave vulnerabilities and fuzzing, 17 real devices | SEARCH + NOTES |
+| Das and Nair multi-stage | 2026 | 178,831 samples, 7 MITRE-Caldera multi-stage scenarios; Wi-Fi only, IPs removed | NOTES |
+| ZBDS2023, ZigBeeNet (2024), Song and Lin Zigbee dataset (2024) | various | Zigbee-side data; size, labels and access still unchecked | NOTES (unverified) |
+| AWID3 | 2021 | Wi-Fi-specific attacks (deauth, disassociation) | MEMORY |
+
+**None of these is verified to label cross-protocol pivots.** Realistic plan (from Update 10): real benign multi-protocol topology plus injected, documented pivots.
+
+### 140.5 D. 5G and cellular
+
+| Dataset | Year | What it has | Info source |
+|---|---|---|---|
+| 5G-NIDD | dataset 2022, descriptor 2025 (IEEE Data Descriptions) | 1,215,890 records (477,737 benign, 738,153 malicious). Attacks: ICMP, UDP, SYN and HTTP flood, slow-rate DoS, plus SYN, TCP-connect and UDP scans. Real 5G test network in Oulu, two base stations, each with an attacker node and benign users. Open access. The paper says nine intrusion types while the tables show eight (check) | SEARCH |
+| NetsLab-5GORAN-IDD, NANCY | not checked | Named in the Hussain survey | NOTES |
+| LTE-M, NB-IoT, 6G | none | No public labeled attack dataset found (earlier notes). Simulation (for example OMNeT++) would be needed | NOTES |
+
+### 140.6 E. Benign-only and device-state data (for MMPP calibration and identity work)
+
+| Dataset | Year | What it has | Info source |
+|---|---|---|---|
+| Deakin IoT Traffic | 2024 to 2025 | 24 IoT devices over 119 days, over 110M packets, a CSV mapping devices to MAC addresses and CSVs on device states, benign only, CC-BY | SEARCH |
+| Dalhousie NIMS benign | 2024 | 9 consumer IoT devices captured in three states (power-up, idle, active), Wi-Fi 2.4 GHz | SEARCH |
+| NIMS converged test set | 2024 | 5 hours of converged traffic where all 9 devices run concurrently | SEARCH |
+| NIMS attack dataset | 2025 | Companion dataset for evaluating models trained on the benign set; contents not read | SEARCH |
+
+### 140.7 F. Enterprise-style, 2019 and later (sanity checks only)
+CICDDoS2019 (MEMORY) and NF-UNSW-NB15 (2020, 20 attack types, flow-based, SEARCH). Not IoT; useful only for generic sanity checks.
+
+### 140.8 Mapping to the plan (suggestion)
+
+| Part of the plan | Datasets |
+|---|---|
+| Paper 1 and conference paper 1 (belief, held-out families) | CICIoT2023 as the main set. Cross-dataset: Edge-IIoTset, TII-SSRC-23 or the TabularIoTAttack-2024 collection (needs a documented feature mapping; earlier notes mention a shared 46-feature vocabulary built by BRIDGE as a possible template) |
+| Portability test (Wi-Fi/IoT to 5G) | 5G-NIDD |
+| MMPP and benign calibration, device states | Deakin IoT Traffic, NIMS benign (device states), NIMS converged set |
+| Identity thread (MAC to device mapping) | Deakin (device-MAC map), CICIoT2023 (per-device identifiers) |
+| Paper 2 (federated, non-IID) | Edge-IIoTset; TON_IoT and X-IIoTID as extras |
+| Paper 3 (cross-protocol) | BCCC-IoT-IDS-Zwave-2025, SHARP, CIC IoT 2022, CICIoMT2024, Shafi (if released) |
+| Attack stages and the temporal belief rule | Das and Nair, SHARP's attack ledger |
+| Conference paper 2 (PPO vs DQN vs DDQN) | Same as conference paper 1 (same environment and splits) |
+
+**Rule of thumb (suggestion):** one main dataset per experiment, one different dataset for the cross-dataset test, and one benign dataset for calibration. Do not tune on the held-out family or on the cross-dataset test set.
+
+### 140.9 What each dataset must be checked for (before relying on it)
+
+- [ ] License, access route and whether it needs an account or subscription (IEEE DataPort, Mendeley, Zenodo, Kaggle, UNB/CIC, York BCCC, UNSW).
+- [ ] Size, format (pcap, flow CSV, both) and whether raw pcap is available (needed to rebuild windows for the viewers).
+- [ ] Per-device identifiers, and whether hub-aggregated traffic can be separated (identity and cross-protocol work).
+- [ ] Time ordering per device and window construction (needed to test the carry-forward memory rule; see open item in Section 66).
+- [ ] Benign share and benign diversity (a benign-poor dataset gives poor normality viewers).
+- [ ] Attack families, so held-out families can be semantically distinct (not near-duplicate variants).
+- [ ] Real traffic vs emulated; label noise; known class overlap.
+- [ ] Feature mismatch across datasets (a mapping is needed for cross-dataset tests).
+- [ ] Whether attack stages or protocol boundaries are labeled.
+
+### 140.10 DOUBLE-CHECK PROTOCOL (datasets may be missing)
+
+1. **Surveys to read for their dataset tables** (found today at snippet level): Haque et al., "A Systematic Review of Data-Driven Attack Detection Trends in IoT" (Sensors 2023); a 2026 Frontiers in Big Data dataset-centric review of IoT and IIoT intrusion datasets with a realism score; the continuous collaborative survey of intrusion detection datasets (arXiv 2408.02521); "Network Intrusion Datasets: A Survey, Limitations, and Recommendations" (arXiv 2502.06688); Stanco et al., novel datasets and traffic-generation tools for IoT intrusion detection (CNSM 2025); the IIoT/OT malicious-traffic dataset review (arXiv 2405.04866); Abdulkareem et al., IoT and non-IoT NID survey (IEEE Access 2024). Verify each citation before use.
+2. **Repositories to search directly:** UNB CIC and York BCCC dataset pages, IEEE DataPort, Zenodo, Mendeley Data, Kaggle, Stratosphere IPS, UNSW Canberra and Deakin pages, GitHub, Papers With Code, HuggingFace datasets.
+3. **Query strings:**
+   - ("IoT" OR "smart home") AND dataset AND (benign OR normal) AND (attack OR malicious) AND (pcap OR flow) with year filters 2024, 2025, 2026
+   - (Zigbee OR "Z-Wave" OR BLE OR Thread OR Matter) AND dataset AND (attack OR intrusion)
+   - ("multi-protocol" OR "cross-protocol" OR hub) AND dataset AND (smart home OR IoT) AND (lateral OR pivot OR "multi-stage")
+   - ("5G" OR "6G" OR "O-RAN" OR "NB-IoT" OR "LTE-M") AND dataset AND (intrusion OR attack OR anomaly)
+   - ("zero-day" OR "unknown attack" OR "novel attack") AND IoT AND dataset
+   - "digital twin" AND IoT AND (dataset OR testbed) AND (attack OR intrusion)
+   - ("device identification" OR "device state") AND IoT AND dataset AND (benign OR attack)
+   - ("Matter" OR "Thread") AND dataset AND security (newer smart-home protocols; not searched today)
+4. **Likely gaps from today's search (suggestion):** Matter and Thread datasets; Wi-Fi 6 and Wi-Fi 7 IoT attack data; labeled cross-protocol pivot data; LTE-M and NB-IoT attack data; adaptive or mimicry attacker traces; datasets with defender actions (a closed loop), which would make the simulator less assumption-heavy.
+5. **Record the date and exact queries** of each check in this section so the claim "no dataset exists for X" is auditable.
+
+## 141. Corrections and flags from today's search
+
+1. CIC IoT 2022 device count: 81 devices (search) vs about 60 (earlier notes). Check the dataset page.
+2. 5G-NIDD: nine intrusion types (paper text) vs eight (tables and attack list). Check the descriptor.
+3. TON_IoT and Bot-IoT years differ across sources. Cite each dataset's own paper.
+4. Earlier notes called CIC IoT 2022 "attack coverage and labels unchecked"; that is still true.
+5. The TabularIoTAttack-2024 collection is a derived relabeling of earlier datasets; do not count it as an independent dataset in cross-dataset claims (its sources overlap with the sets it would be tested against).
+
+## 142. Open items and next steps
+
+1. Run the double-check protocol in 140.10 and update this section; mark any dataset added or removed.
+2. Check the items in 140.9 for the shortlisted datasets: CICIoT2023, Edge-IIoTset, TII-SSRC-23, 5G-NIDD, Deakin, NIMS, BCCC-IoT-IDS-Zwave-2025, SHARP, CICIoMT2024, CIC IoT 2022.
+3. Decide the cross-dataset feature mapping before any cross-dataset experiment.
+4. Confirm whether the York smart-home dataset (Shafi) is released and whether SHARP and BCCC contain any cross-protocol attack.
+5. Carry forward all open items from earlier sections.
