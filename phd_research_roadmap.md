@@ -6252,3 +6252,228 @@ Technology only, not about any person. Main source: Wang et al., arXiv 2605.0584
 6. Measure real satellite and hub round-trip times before using them in the latency model.
 7. Decide whether ISAC sensing stays an extension or is dropped from the plan.
 8. Carry forward all open items from earlier sections.
+
+---
+
+## UPDATE — 23 November 2026 (new section only; REPLACES Section 124; everything else above is unchanged)
+
+### 125. 6G: consolidated reference (numbers, timeline, security literature, sources, what we explained)
+
+**Status:** research notes, not final claims. This replaces Section 124, which contained numbers from memory that turned out wrong. Verification levels used below:
+- **READ-FULL**: full text read in this chat.
+- **READ-PART**: part of the full text read (the fetch tool truncates long PDFs).
+- **ABSTRACT/SNIPPET**: only an abstract or search snippet seen.
+- **MEMORY**: from my background knowledge, not checked.
+
+**Rule for the proposal:** cite standards documents (3GPP TR 38.914, ITU-R M.2160) for numbers, never survey papers. Even the surveys disagree with each other on the headline numbers.
+
+---
+
+#### A. Corrections to things said earlier in this chat
+
+| # | Earlier statement | Correction |
+|---|---|---|
+| 1 | "6G target: 1 Tbps peak rate" | 1 Tbps is a common target in the literature, not the ITU or 3GPP number. The 3GPP minimum is 36 Gbit/s downlink. |
+| 2 | "0.1 ms latency" | 0.1 to 1 ms is the ITU research range over the air. The 3GPP minimum is 4 ms (immersive) and 1 ms (hyper-reliable low latency), and it is the radio's contribution only, not end-to-end. |
+| 3 | "10^7 devices per km^2" | The 3GPP minimum is 10^6 per km^2, the same as the 5G figure. The ITU range is 10^6 to 10^8, as research targets. |
+| 4 | "6G IoT will be denser and lower power" | Not supported as a 3GPP minimum. See section D. Battery-free and low-power devices stay on separate technologies (ambient IoT, NB-IoT, eMTC). |
+| 5 | "No security analysis of ambient IoT found" | Wrong. 3GPP SA3 has Rel-19 and Rel-20 ambient-IoT security work (section D). |
+| 6 | "6G AI is mostly for performance, not security" | Too narrow. The literature treats AI in 6G as a performance tool, a security tool and an attack surface. |
+| 7 | "Security layer that tests graded actions" attributed to 6G | That was the roadmap's digital twin idea (old Paper 3), not 6G AI. |
+| 8 | "Long satellite delay" | Outdated for low-orbit constellations (figures from MEMORY, not verified). Satellite internet (dish plus router) and 3GPP non-terrestrial networks (satellite as a cell tower for small devices) are different things. |
+| 9 | "Andreou et al. = CTDE cross-slice defense" | Only the abstract was seen. The keywords say MAD-DPG, and the abstract does not say CTDE. The setting is virtualized SDN clouds, not IoT. |
+| 10 | "A Z-Wave dataset review is from 2026" (Update 8) | It is from 2025 (already noted in Update 19). |
+| 11 | "Damasceno et al." as author of the 6G zero-day tree-based paper (Section 124) | The author name was not verified. The source is an SMC 2026 PDF at www.cin.ufpe.br/~amb4/assets/smc2026Gabi.pdf. Cite by title only until checked. |
+
+---
+
+#### B. Verified numbers (3GPP TR 38.914 V20.1.0, Sept 2026, READ-FULL)
+
+The report is a study report. Its KPI targets combine targets from the draft ITU-R performance-requirements report with 3GPP-specific requirements. The ITU final minimum requirements are still being defined.
+
+| KPI | 3GPP minimum (TR 38.914) | ITU research target (M.2160, via secondary sources) |
+|---|---|---|
+| Theoretical peak data rate | DL 36 Gbit/s, UL 18 Gbit/s (derived assuming 600 MHz aggregated bandwidth; the bandwidth itself is not part of the requirement) | 50 / 100 / 200 Gbit/s as examples; 5G was 20 Gbit/s |
+| Peak spectral efficiency | DL 60 bit/s/Hz, UL 30 bit/s/Hz | 1.5x to 3x of 5G |
+| 5th percentile user rate | Dense urban: DL 300 Mbit/s, UL 50 Mbit/s | not retrieved |
+| Area traffic capacity | DL 40 Mbit/s/m^2 (indoor hotspot) | 30 and 50 Mbit/s/m^2 (5G: 10) |
+| User-plane latency | 4 ms for immersive communication, 1 ms for hyper-reliable low-latency; radio contribution only, unloaded | 0.1 to 1 ms over the air (5G: 1 ms) |
+| Control-plane latency | 20 ms | not retrieved |
+| Connection density | 10^6 devices per km^2 (urban massive-connection scenario) | 10^6 to 10^8 per km^2 (1 to 100 times 5G) |
+| Reliability | 1 - 10^-5 for a 32-byte packet within 1 ms, at coverage edge, indoor factory | 1 - 10^-5 to 1 - 10^-7 |
+| Mobility | classes up to high-speed vehicular (120 to 500 km/h); airplane class 500 to 1000/1200 km/h (3GPP internal KPI) | 500 to 1000 km/h |
+| Bandwidth | at least 400 MHz (6G channel); the 7 GHz base station supports 400 MHz | not retrieved |
+| Positioning (horizontal) | indoor factory 0.75 m, urban macro 6 m; vertical 3 m (80%) | not retrieved |
+| Sensing | detection 95%, false alarm 5%; localization 2 m (factory) / 5 m (urban macro); velocity 2 / 4 m/s | not retrieved |
+| Coverage | reuse the 5G 3.5 GHz site grid at about 7 GHz; basic coverage MaxCL 143 dB; extended 153 dB | not retrieved |
+
+**Reading the table (honest summary):**
+- On paper the 3GPP minimums are a moderate step over 5G: peak rate about 1.8x, 400 MHz channels, higher spectral efficiency, sensing and AI requirements, harmonized terrestrial and satellite design. The "Tbps, 0.1 ms, 10^7" figures are vision targets, not minimum requirements.
+- ITU itself says the target ranges apply only to some usage scenarios and may not be reached simultaneously.
+- Not retrieved: 4G (LTE-A) comparison figures. The earlier 4G column is unverified.
+
+**Massive IoT in 6G (TR 38.914 clauses 5.3.2, 5.4.3, 5.1.20):**
+- Supported in FR1; the lowest-tier device has minimum 1 antenna and a PHY peak rate of 10 Mbit/s in each direction.
+- It should not overlap with ambient IoT and NB-IoT. 6G must coexist with NB-IoT and eMTC.
+- The smallest maximum device channel bandwidth is 20 MHz (TDD with 30 kHz SCS, or FD-FDD with 15 kHz SCS).
+- Extended coverage MaxCL 153 dB for the lowest-tier IoT device, in sub-3 GHz frequencies.
+- Security requirement is generic: integrity and confidentiality protection for control and user plane over the radio interface (clause 5.3.7).
+
+**Orbit types in the report (non-terrestrial networks):** VLEO 300 to 600 km, LEO 600 to 2000 km, MEO 2000 to about 35,000 km, GSO about 35,786 km.
+
+---
+
+#### C. Timeline (3GPP Rel-20 highlights, Oct 2026; READ-FULL, but the PDF is a draft with editor notes: "edits not yet OK'd")
+
+| Item | Date |
+|---|---|
+| TR 38.914 (6G scenarios and requirements) approved | RAN#112, June 2026 |
+| Rel-20 working-group 6G studies conclude | June 2027 |
+| Rel-20 5G-Advanced Stage-3 freeze | March 2027 |
+| 6G work item approval (Rel-21) | RAN#115, March 2027 |
+| Rel-21 Stage 1 freeze | March 2027 |
+| Rel-21 Stage 2: 80% checkpoint / freeze | March 2028 / June 2028 |
+| Rel-21 Stage 3 freeze | December 2028 |
+| Rel-21 ASN.1/OpenAPI freeze | March 2029 |
+| 3GPP submission to ITU: partial self-evaluation / final self-evaluation | June 2028 / February 2029; specifications submitted in 2030 |
+| RAN#114 (December 2026) | decides migration study scope; approves self-evaluation study |
+| Commercial launch | estimate only: late 2028 to 2030 (arXiv 2407.09398); not a standard commitment |
+
+**Migration and compatibility (READ-FULL):**
+- 6G radio is one new, non-backward-compatible radio with standalone architecture.
+- Multi-RAT spectrum sharing (MRSS) lets 5G NR and 6G share a carrier; 5G devices keep being served. Control-channel sharing keeps the overhead increase to a few percentage points in the reported inputs.
+- Interworking with 3G and 2G is not supported; 6G must support inter-RAT mobility with NR, idle-mode mobility with LTE, and coexistence with LTE up to 20 MHz.
+- Plain meaning of non-backward-compatible: old devices cannot use the new radio directly, so 5G and 6G run side by side for years, and old LTE-M, NB-IoT and ambient-IoT devices stay in the field.
+
+---
+
+#### D. Technology notes
+
+- **ISAC (radio also senses like a radar):** Rel-20 5G-Advanced includes UAV sensing with a base station in monostatic mode. The 6G report has quantitative sensing requirements and requires detection and tracking of passive objects (UAV, human, vehicle, AGV). 23 ISAC use cases were accepted in the Rel-20 6G studies; ISAC over non-terrestrial networks is not in the Rel-20 SA2 6G study scope (arXiv 2604.11593, ABSTRACT/SNIPPET). SA3 defines security and privacy mechanisms for sensing.
+  - Plain use: the same signal and hardware carry data and also detect movement from echoes.
+  - Link to us (suggestion, untested): sensing could become an extra viewer; it also adds a privacy risk.
+- **Ambient IoT (battery-free, energy harvesting):** Rel-18 study, Rel-19 study plus work item (indoor inventory and command), Rel-20 extends it (arXiv 2312.06569, 2506.11828, 2412.21077, ABSTRACT/SNIPPET). Security: Rel-19 covers authentication, credential protection, confidentiality, integrity, replay protection and temporary identifiers for the first device type in isolated private networks; Rel-20 extends to more device capabilities (3GPP highlights, READ-FULL).
+- **Digital twin:** a real-time mirror of the network used to simulate and test decisions before deploying them (arXiv 2506.01609); what-if and policy experimentation (ATIS Next G panel); passive monitoring twins versus active control twins (arXiv 2608.12267). 3GPP SA5 is studying network digital twins and closed control loops for 6G management. A network twin simulates the network; our world model simulates traffic reactions to defense actions (related, not the same).
+- **AI in 6G:** the 6G report requires support for "Network for AI" and "AI for network". 3GPP SA2 views are divided on AI agents in the architecture, and SA3 is studying device AI-agent security. AI is both a performance tool, a security tool and an attack surface (adversarial ML, poisoning, model extraction).
+- **Non-terrestrial networks (NTN):** satellites, HAPS and UAVs as part of the same network; Rel-20 includes NB-IoT NTN security via the EPC. Satellite internet (Starlink-type, dish plus router, just another uplink) is different from 3GPP NTN (satellite acts as a tower for small standard devices). Starlink delay figures are MEMORY and unverified.
+
+---
+
+#### E. Plain-language explanations given in this chat (kept for meeting prep)
+
+1. **Bandwidth cap versus attack type** (the lion and the door analogy):
+   - A bandwidth cap works best against floods (DoS): the harm is volume, and capping volume blunts it. This is exactly the rate-limit rung of the action ladder.
+   - It fails against exploits (a tiny harmful message fits through any narrow door) and against botnets (many small senders, each under the cap). A distributed flood from a botnet is a mix: the per-device cap fails, but the combined flood still hurts the target.
+   - The size of the door does not decide safety; the guard does (lock, monitoring, speed limit). This is why the agent reads behavior, not just volume.
+2. **Why small IoT devices do not need speed:** a sensor sends tiny messages, so it needs low power and a weak antenna, not 100 Mbit/s. "Faster" is not the IoT bottleneck.
+3. **Will 6G AI make the thesis obsolete?** Not from this evidence. Operator-side AI security works on the network's view (call records, radio tiers) and mostly targets cyber-physical systems. Our agent works at home or device level with a belief and graded response. Position the work as a response layer that complements the network's AI.
+4. **Why the agent must run on a hub:** tiny battery or battery-free devices cannot run defenses on board. The Hussain survey puts on-device detection at under 1 ms, edge (MEC) at 1 to 10 ms and cloud at 80 to 120 ms (quoted from its cited sources, SECONDARY).
+
+---
+
+#### F. Security literature (what was found and how much was read)
+
+| Work | Read level | What it does | Relation to our thesis |
+|---|---|---|---|
+| Hussain, Bilal, Li, Pervaiz, Tang, Du, Ahmad, Azhar, Zhang, "AI-Native Closed-Loop Security for 6G-Enabled Cyber-Physical Systems" (arXiv 2606.08173, 2026) | READ-PART (to Sec. VII-A of IX) | Sense, detect, mitigate, learn loop at the edge; 128 studies; latency contract per slice; scope excludes generic enterprise IT and pure-IoT settings | Closest conceptual neighbour at operator level; supports false-block cost, reversibility and type-aware actions; shows RL orchestrators exist |
+| Munir, Proddatoori, Muralidhara, Dena, Saad, Han, Shetty, "A Trust-By-Learning Framework for Secure 6G Wireless Networks Under Native Generative AI Attacks" (IEEE OJCOMS vol. 6, 2025, DOI 10.1109/OJCOMS.2025.3591535) | READ-FULL | DS-inspired trust model (belief over a power set of network metrics, evidence from a Bayesian belief network, plausibility as uncertainty) plus multi-agent meta-RL with centralized training and decentralized execution | Closest DS + RL work found. See differentiation below |
+| Barua, Khan, Ye, Papanastasiou, Liu, Bidikar, Moulds, McCann, Yadav, "Toward a Unified Security and Privacy Framework for AI-Native 6G Networks" (arXiv 2607.01019, Jul 2026) and the related version "Beyond Fragmented Standards" (systronlab.github.io) | arXiv: ABSTRACT only. Related version: READ-PART (to Sec. V-B) | Cross-layer threat taxonomy; ZTA with embedded AI and dynamic trust; lightweight security for low-power devices; NTN autonomous defense | Background; no belief or POMDP seen in the part read; its KPI numbers do not match ITU or 3GPP |
+| Andreou, Mavromoustakis, Aslam, Markakis, "Coordinated Multi-Agent Moving Target Defense Against Cross-Slice Lateral Movement in Virtualized SDN Clouds" (IEEE NFV-SDN 2025) | ABSTRACT | Multi-agent (MAD-DPG) MTD; reports latency under 50 ms and under 20 flow changes per minute | Closest cross-boundary lateral-movement defense; virtual slices, not IoT protocols |
+| QuantumGuard (thesai.org, vol. 17 no. 6, paper 94) | SNIPPET | POMDP formulation of attacker engagement, solved with a recurrent PPO agent, for 6G cyber-physical environments | Shows POMDP + recurrent PPO in 6G exists (deception setting) |
+| "6G Sensing Security: Distributed Game-Theoretic RL for Urban Beamforming and Attacker Detection" (arXiv 2607.06115) | SNIPPET | Bayesian-like belief that each user is malicious, discretized to 5 levels, fed to Q-learning | Belief + RL in 6G exists (beam and sensing setting) |
+| Tree-based zero-day detection in 6G (SMC 2026, www.cin.ufpe.br/~amb4/assets/smc2026Gabi.pdf; authors not verified) | SNIPPET | Notes that aggregate metrics can hide weak zero-day performance and single datasets limit generalization | Supports held-out-family and cross-dataset protocol |
+| Rifa-Pous et al., "Security, Trust and Privacy challenges in AI-driven 6G Networks" (arXiv 2409.10337) | SNIPPET | AI helps security and is also a risk | Background |
+| Edge learning for 6G-enabled IoT survey (arXiv 2306.10309); Siamese + PPO zero-day IDS (arXiv 2609.26115); MARL anomaly detection over 6G V2X (MUET); Hammar-Stadler-line OT intrusion response (arXiv 2609.10298) | SNIPPET | Earlier roadmap items | See earlier updates |
+| Others seen in searches: arXiv 2511.15206 (Trustworthy GenAI over 6G), arXiv 2610.30436 (Secure agentic AI in 6G), arXiv 2602.19942 (Secure communications, sensing, computing), arXiv 2512.22721 (long NextG security text), arXiv 2604.07212 (analysis of TR 38.914) | SNIPPET | Background | Open only if needed |
+
+**Datasets:** no 6G-native labeled attack dataset found. 6G papers reuse Kitsune, 5G-NIDD, UNSW-NB15, CSE-CIC-IDS2018, CICDDoS2019, Bot-IoT and TON_IoT. Hussain et al. lists only three public sets with native 5G or O-RAN provenance (5G-NIDD about 1.22 M flows, NANCY, NetsLab-5GORAN-IDD), and says operator CDR data has no attack labels.
+
+**Differentiation against Trust-By-Learning (Munir et al.):**
+
+| | Trust-By-Learning | Our plan |
+|---|---|---|
+| Threat | GenAI poisoning of network metrics (RSRP, CQI) | Novel attacks, device compromise in IoT traffic |
+| DS use | DS-inspired trust; evidence from a Bayesian network; no Dempster/Yager fusion of several viewers seen in the text read | Masses from several frozen viewers; Dempster and Yager as arms; Omega and K reported |
+| Unknown-attack state | not seen | explicit state U |
+| RL | multi-agent meta-RL, CTDE, LSTM, policy gradient with advantage and entropy (no PPO seen) | PPO; G1 to G5 arms |
+| Reward and action | CQI-weighted trust score; trust decision on service aggregation | defense-cost reward; graded action ladder |
+| Data | open 5G channel-metrics set, attacks generated by autoencoder, VAE, GAN | real held-out attack families |
+| Reported results | trust scores (0.972 / 0.922 / 0.892) and dependency replication | detection, false-alarm rate at fixed detection, cost |
+
+My reading, not a quote: the reported numbers measure how well generated data replicates dependencies, not detection or false alarms on real attacks, so they are not comparable with our metrics.
+
+---
+
+#### G. What Hussain et al. supports in our design (all READ-PART)
+
+- A false positive on safety-critical traffic can cost more than a missed attack. This supports the reward cost-ratio sweep.
+- Mitigation needs a reversibility path: every action has an inverse that must be reachable in a comparable time budget. This supports the ladder and the temporary-block design.
+- A generic "alert then rate-limit" reflex can be harmful, so mitigation must be type-aware (the per-segment action mapping is still open for us).
+- Report under-reported metrics: calibrated false-positive rate, tail latency (p99) and energy per decision.
+- Accuracy near 99% on saturated public benchmarks versus about 91 to 98% on real operator data is a benchmark artifact. This supports the real-data rule.
+- RL orchestrators over (primitive, tier, intensity) already exist, and RL-driven attackers that adapt to the defender are reported. The second point supports Idea F.
+- Latency anchors for the latency test: on-device under 1 ms, edge 1 to 10 ms, cloud 80 to 120 ms (replace the assumed 300 ms cloud value); an xApp-based detector reported 90 ms detection at 132 Msg3/s on a testbed (SECONDARY, from a cited work).
+- The loop itself (sense, detect, mitigate, learn) has the same shape as MAPE-K and OODA. The survey says its novelty is the latency contract. So the loop idea is not ours to claim.
+
+---
+
+#### H. Use in the PhD
+
+**Safe to use:**
+- Motivation: new networks have no attack history, so novel attacks are the normal case (my argument, label it as such).
+- 6G coexists with NB-IoT, eMTC and ambient IoT, so the device fleet stays mixed for years; the agent sits above the access layer.
+- Federated learning and digital twins are recognized 6G themes (cite the surveys).
+- Adversarial AI is a listed 6G threat (supports Backup D).
+- Portability claim: "access-technology-agnostic, evaluated on Wi-Fi/IoT and 5G data, with 6G as a motivating future case".
+- Cite the TR 38.914 numbers in section B, not the vision numbers.
+
+**Do not claim:**
+- Any "first" for belief-based RL, DS-based RL, POMDP + PPO or federated RL in 6G security (Trust-By-Learning, QuantumGuard, the sensing-security paper, Siamese + PPO and the Hussain-cited RL orchestrators exist).
+- That 6G has data (no 6G-native labeled attack dataset found).
+- That 6G IoT is "lower power" or "denser" as a minimum requirement.
+- Any speed, latency or density figure not in section B.
+- That no belief or POMDP appears in the Hussain or Barua surveys (only part of each was read).
+
+**Suggested scope (my judgment):** use 6G as one motivation paragraph and a portability test, not as a pillar.
+
+---
+
+#### I. NOTE: search for more sources (the current list is not exhaustive)
+
+This list comes from about 12 web searches plus a handful of full-text fetches, not a database sweep. Before relying on any claim above, run these.
+
+1. **Databases:** IEEE Xplore, ACM DL, Scopus, Web of Science, arXiv, Semantic Scholar, Google Scholar, DBLP. Prioritize 2025 and 2026.
+2. **Standards first-hand:**
+   - Read TR 22.870 (SA1 6G use cases), TR 33.801-01 (6G security study), TR 23.801-01 (6G architecture), TR 32.801-01 (6G management) and TR 33.703 (post-quantum). Check whether they mention anomaly detection, response automation or an attacker model.
+   - Read ITU-R M.2160-0 itself and the ITU report on minimum technical performance requirements when published.
+   - Re-fetch TR 38.914 after RAN#114 (December 2026) in case values change.
+3. **Query strings to run:**
+   - ("6G" OR "beyond 5G") AND (POMDP OR "belief state" OR "partially observable") AND (security OR intrusion OR "cyber defense")
+   - ("6G" OR "5G") AND ("Dempster-Shafer" OR "evidential" OR "subjective logic") AND (intrusion OR attack OR anomaly) AND ("reinforcement learning" OR PPO)
+   - ("6G" OR "5G") AND IoT AND ("zero-day" OR "unknown attack" OR "novel attack") AND ("reinforcement learning" OR "federated")
+   - ("lateral movement" OR pivot) AND (multi-protocol OR "cross-protocol" OR "cross-slice") AND (IoT OR "smart home") AND (MARL OR CTDE OR "belief")
+   - ("ambient IoT" OR "zero-energy") AND (security OR attack OR "intrusion detection")
+   - ("ISAC" OR "integrated sensing") AND (security OR privacy OR attack) AND IoT
+   - ("digital twin") AND ("reinforcement learning") AND ("intrusion response" OR "cyber defense") AND ("6G" OR "5G")
+   - "6G" AND (dataset OR benchmark OR testbed) AND (intrusion OR attack) AND (labeled OR "attack labels")
+4. **Read in full (not done yet):** the arXiv full text of Barua et al.; the last sections of Hussain et al. (open challenges, five directions); Andreou et al. (full text); the SMC 2026 zero-day paper (verify authors); QuantumGuard and the 6G sensing-security paper beyond the snippet.
+5. **Check later:** Starlink and 3GPP NTN delay figures, direct-to-device IoT status, and 4G (LTE-A) comparison figures.
+6. **Process note:** the fetch tool truncates long PDFs and has a rate limit; re-run with higher limits or fetch by page ranges when needed.
+
+---
+
+#### J. Study-plan status at this point
+
+- Session 2 (RL up to PPO): finished (Sections 105 to 123; the quick reference is Section 123).
+- Session 1 Steps 6 to 8: still skipped (episode end and U response, sanity-check baselines, one-page design).
+- Possible Session 3 layout (suggestion, not decided): DQN vs PPO plus the formal belief-in-PPO recap; then world models and MBRL; then experiment design.
+- The user reported low confidence in PPO Steps 9 to 11 and the policy-gradient math; revisit with one tiny example per idea (the nudge, the advantage, the clip).
+- The 6G topic was a side study; next 6G step is the search in section I, then decide where 6G sits (motivation paragraph, portability experiment, or Paper 3 environment).
+
+#### K. Open items
+
+1. Run the search plan in section I and update this section; remove any claim that a sweep contradicts.
+2. Decide where 6G sits in the proposal (suggestion: motivation plus portability test).
+3. Verify author names and venues for every row marked ABSTRACT/SNIPPET before citing.
+4. Replace assumed latency values in the latency test with the anchors in section G, and with measured values on hub-class hardware when available.
+5. Carry forward all open items from earlier sections (Sections 66, 80, 92, 109, 122 and the earlier updates).
