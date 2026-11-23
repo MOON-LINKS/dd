@@ -6477,3 +6477,151 @@ This list comes from about 12 web searches plus a handful of full-text fetches, 
 3. Verify author names and venues for every row marked ABSTRACT/SNIPPET before citing.
 4. Replace assumed latency values in the latency test with the anchors in section G, and with measured values on hub-class hardware when available.
 5. Carry forward all open items from earlier sections (Sections 66, 80, 92, 109, 122 and the earlier updates).
+
+
+---
+---
+
+# UPDATE — 23 November 2026, Part 2 (new sections only; everything above is unchanged)
+
+Today: the two belief algorithms that were missing from the list in Section 8 and Section 28 were studied from zero, step by step: TBM (Transferable Belief Model) and possibility theory. Sections 81 to 92 (12 November) stay as they are. Items marked (suggestion) are mine, not decisions. Items marked (verify) are general knowledge or my reasoning, not checked against a source. No literature search was run today.
+
+## 128. THE TWO SYMBOLS TO NEVER MIX (memorize this first)
+
+| Symbol | Plain meaning | One-line picture |
+|---|---|---|
+| **Omega** | **"I don't know, I have no idea."** No evidence. Comes from one viewer. Neutral: fusing it with another viewer changes nothing. | A witness who was not there |
+| **K (conflict)** | **Disagreement between viewers.** Each is sure, but about different things. | One witness says red, another says blue |
+| **U** (a state in the frame) | "A real attack from a family I never trained on." A viewer must point at it. | A suspect not on the poster wall |
+
+- High Omega suggests: gather more data, watch.
+- High K suggests: investigate; a viewer may be miscalibrated, the protocol may have shifted, or something new is happening.
+- Check example: viewer 1 {N} 0.9, viewer 2 {D} 0.9 is a K problem (K = 0.81), not an Omega problem.
+- Yager blurs the two (it adds K into Omega), so always save K and the ignorance part separately before adding them.
+
+## 129. TBM (Transferable Belief Model)
+
+**Status:** studied in 3 steps. Source of the model: Smets (from memory, verify the references before citing).
+
+**Plain idea:** a multiple-choice exam. Closed world: the right answer is always printed (A, B or C). Open world: the right answer may not be printed. Dempster's rule and plain Bayes assume a closed world. TBM is DS with one change: **mass is allowed on the empty set, and that mass means "the truth is outside my list, or my viewers contradict each other".**
+
+**How it combines:** the same grid as Dempster (cell = overlap, mass = product), **with no division**. The empty cell keeps its mass.
+
+Example 1 (two viewers clash): viewer 1 {N} 0.9, Omega 0.1; viewer 2 {D} 0.9, Omega 0.1.
+
+| Rule | Result |
+|---|---|
+| Dempster (divide by 0.19) | N 0.47, D 0.47, Omega 0.05 (looks like a confident 50/50; hides that 81% clashed) |
+| Yager (K goes to Omega) | N 0.09, D 0.09, Omega 0.82 (reads as "I don't know"; loses the difference between no evidence and contradiction) |
+| **TBM (keep it)** | **empty 0.81**, N 0.09, D 0.09, Omega 0.01 (conflict and ignorance stay separate) |
+
+**Three or more viewers:** the same operation applied again. The rule does not depend on order: (a x b) x c = a x (b x c). It can also be done in one big grid. (Yager is the exception: its conflict-to-Omega step breaks the order independence.)
+
+Example 2 (three viewers): A {N} 0.6, Omega 0.4; B {D} 0.5, Omega 0.5; C {N} 0.5, Omega 0.5.
+- A x B: empty 0.30, N 0.30, D 0.20, Omega 0.20. Then x C: **empty 0.40, N 0.40, D 0.10, Omega 0.10.** Combining in a different order gives the same numbers.
+- Dempster divides by 0.6: N 0.67, D 0.17, Omega 0.17.
+
+**Relation to Dempster:** TBM divided by (1 - empty) equals Dempster exactly. So the two agree on how the non-conflicting mass is shared, and differ only on what they say about the conflict.
+
+**Correction to an observation made in the session:** the difference between TBM and Dempster does **not** come from the number of viewers. It comes from how much conflict has accumulated. Two viewers that clash badly give a huge gap (the Zadeh case); three viewers that agree give none. More viewers tends to widen the gap because there are more chances to clash and the empty-set mass can only grow, but conflict is the cause. Whether the gap really becomes large with three or more viewers on real traffic is a hypothesis for the simulation, not a finding.
+
+**Safe wording for the paper (suggestion):** "TBM and Dempster's rule agree on how the non-conflicting mass is shared. They differ in what they say about the conflict, and the difference grows as conflict accumulates, which tends to happen as viewers are added."
+
+**Property to remember: the empty-set mass can only grow.** Once mass lands on it, nothing moves it back out. With more viewers, or with a memory that carries the old belief forward, it piles up. Design question (not tested): read it fresh each window, or let it fade like the keep factor k (suggestion).
+
+**Decision step:** apply the pignistic transform on the non-empty part, i.e. divide by (1 - empty) first. Class ranking is therefore identical to Dempster's. What TBM adds is the conflict kept as its own number (an alarm signal), not a different class decision.
+
+**TBM with a U state in the frame: does it become the same as Dempster?** No.
+- With U in the frame the list looks complete, so the open-world argument weakens.
+- The two rules still treat the clash differently: Dempster divides it away, TBM keeps it. In the clash example, U gets no mass at all (no viewer pointed at it) while the empty set holds 0.30.
+- U and the empty set catch different things. U = a viewer positively says "nothing known fits". Empty set = viewers contradict each other (this can also come from a miscalibrated viewer or a protocol shift). With both you keep both signals.
+- My view (hypothesis): TBM with U is practically "Dempster or Yager plus K reported separately", with a cleaner open-world interpretation. TBM without U is the cleaner test of whether U is needed.
+
+## 130. Possibility theory
+
+**Status:** studied in 3 steps. Source (from memory, verify): Zadeh 1978, Dubois and Prade. It is a relative of fuzzy logic and a simpler cousin of DS.
+
+**Step 1, the idea ("how surprised would I be?"):** a detective's list of suspects. Instead of "how likely is each?", ask "how surprised would I be if it were this one?". Not surprised at all = possibility 1; shocked, it cannot be = 0.
+
+Example (one viewer): Normal 1.0, DDoS 0.7, Scan 0.2, U 0.1.
+
+Three differences from probability and DS masses:
+1. The numbers do **not** add to 1. Several states can be fully possible at once (Normal 1.0 and DDoS 1.0 means "can't tell between these two"; a probability would have to split 50/50).
+2. At least one state must be 1 (normalization): the best explanation always scores 1.
+3. A group scores as its **best** member: possibility of "attack" = max(DDoS, Scan, U) = 0.7.
+
+Total ignorance = 1 for every state ("nothing is ruled out"), the same role as Omega, with no separate symbol.
+
+**Where the numbers come from:** design choices, the same way as fuzzy ramps (for example a function of how far the GRU residual is from normal). They are not counted evidence. This is the same weakness we saw in fuzzy.
+
+**Where is the conflict? (fusion).** Take the **minimum**, state by state: a state stays possible only if both viewers allow it.
+
+| | Normal | DDoS | Scan |
+|---|---|---|---|
+| Viewer 1 | 1.0 | 0.3 | 0.1 |
+| Viewer 2 | 0.2 | 1.0 | 0.1 |
+| **Min** | 0.2 | 0.3 | 0.1 |
+
+> **Conflict = 1 - (the best score after the min).** Here 1 - 0.3 = **0.7.** If the viewers agree (the best score stays 1) the conflict is 0.
+
+- The all-1s distribution (total ignorance) is neutral under the min, like Omega.
+- The same temptation as Dempster: scaling the result back up so the best score is 1 hides the clash. Save the conflict number before scaling, as in TBM.
+- The min does not depend on order, so any number of viewers can be fused. The best score can only fall, so conflict can only grow, like the empty-set mass in TBM.
+
+**Step 2, certainty (the mirror number):** possibility asks "can I not rule this out?"; certainty asks "have I ruled out everyone else?".
+
+> **Certainty of a claim = 1 - the highest possibility among everything else.**
+
+Using Normal 1.0, DDoS 0.7, Scan 0.2, U 0.1:
+
+| Claim | Possibility | Certainty |
+|---|---|---|
+| Normal | 1.0 | 0.3 |
+| DDoS | 0.7 | 0 |
+| "Some attack" | 0.7 | 0 |
+| "Not U" | 1.0 | 0.9 |
+
+Each claim gets [certainty, possibility], a lower and an upper bound, the same shape as [belief, plausibility] in DS. All 1s gives [0, 1] (total ignorance); one clear winner gives a narrow gap (for example Normal 1.0, all others 0.1 gives Normal [0.9, 1.0]).
+
+**Relation to DS (general knowledge, verify):** possibility corresponds to plausibility and certainty to belief, but only when the evidence groups are nested ({A}, {A,B}, {A,B,C}). That is why it is a simpler cousin: it cannot express arbitrary groups such as {D,S} as separate evidence.
+
+**Step 3, strengths and limits (brief):**
+- **No reinforcement from agreement.** The min is idempotent: two viewers that both say 0.3 give 0.3, not a stronger belief. DS multiplies, so agreeing viewers reinforce each other. For us this is double-edged: it is safe when viewers are correlated (the GRU and MMPP learn from the same normal traffic, so their agreement is weaker evidence than it looks), but it also cannot become more confident when viewers truly agree. (Reasoning, verify.)
+- **No "amount of evidence" number.** Like fuzzy, it has no u or Omega-from-counts; ignorance is only the all-1s distribution.
+- **No groups as evidence** (only nested), and the numbers are design choices.
+- **Decision:** rank states by certainty or possibility; a tie at 1.0 means "can't tell". It does not need a pignistic step.
+- **Use in the pipeline (suggestion, untested):** (a) as an extra fusion-rule arm (cheap: a min per state); (b) as a converter, since the fuzzy ramps already produce possibility-like numbers (a "high residual" ramp is essentially a possibility distribution).
+
+## 131. Where each algorithm sits (updated comparison)
+
+| Method | Layer | Handles | Conflict number | Ignorance | Groups |
+|---|---|---|---|---|---|
+| Bayesian | belief language | probability per state | no | prior on a U state (guessed) | no |
+| DS (Dempster) | belief language + fusion | mass on groups | K, then divided away | mass on Omega | yes |
+| DS (Yager) | fusion | same | K, moved to Omega | mass on Omega (blurred with K) | yes |
+| **TBM** | belief language + fusion | same, open world | **empty-set mass, kept** | mass on Omega | yes |
+| EDL | viewer | learned evidence | no | u | no |
+| Subjective logic | belief language | (b, u) from counts | no | u | no |
+| Fuzzy | converter | vague words | no | no | no |
+| **Possibility** | belief language + fusion | "what is still possible" | **1 - best score after min** | all-1s distribution | nested only |
+
+Order of strength (my opinion, untested): TBM and Dempster/Yager are the richest for fusion; possibility is the simplest and cheapest; none is "stronger" on class accuracy by default. The held-out-family test decides.
+
+## 132. Experiment arms to add (suggestion)
+
+Add to the offline belief tests (Section 63, Section 46):
+1. **TBM with U** and **TBM without U**, next to Dempster, Yager and plain probability averaging (the same viewers and converters for all).
+2. **Possibility-min fusion** as one more fusion arm on the same viewers.
+3. Reports for every arm: novelty AUROC on held-out families, false-alarm rate at a fixed detection rate, known-class accuracy (pignistic or certainty-based ranking), calibration, **and the conflict readout** (empty-set mass for TBM, 1 - best score for possibility, K for Dempster/Yager).
+4. A rule for how the empty-set mass (and the possibility conflict) behaves over time: read fresh each window, or fade (test both).
+5. Expected from reasoning (hypotheses only): TBM ranks classes like Dempster; its gain is the extra alarm signal. Possibility may be more robust to correlated viewers but cannot reinforce agreement. Miscalibrated viewers inflate the conflict readouts and cause false alarms, so viewer calibration decides more than the algorithm.
+6. Same fairness rules as before: equal tuning budget, separate tuning and evaluation seeds, grid-edge check, thresholds chosen on validation, held-out families never used for tuning.
+
+## 133. Open items and next steps
+
+1. Check the references for TBM (Smets) and possibility theory (Zadeh, Dubois and Prade) and the DS/possibility nesting statement before citing.
+2. Check literature for TBM or possibility theory applied to intrusion detection or RL belief (not searched); add to the database sweep: ("transferable belief model" OR "possibility theory") AND (intrusion OR IoT OR "zero-day").
+3. Decide the time rule for the empty-set mass (fresh vs fading).
+4. Decide whether possibility is used only as a fusion arm or also as the converter for number-output viewers.
+5. Carry forward all open items from earlier sections, including Sections 66, 92 and 122.
+6. Next study (suggested order): the postponed Session 1 decisions, then Session 3 (PPO vs DQN plus the formal belief-in-PPO recap), then world models and MBRL, then experiment design.
