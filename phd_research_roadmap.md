@@ -6976,3 +6976,147 @@ When working on this project:
 3. Start the results ledger on the simulator PC (settings, seed, result, hypothesis, outcome), so every fix is traceable.
 4. Define the label-aware reference version for each stage of the belief pipeline (viewers, conversion, fusion) so the gap can be measured stage by stage.
 5. Carry forward all open items from earlier sections.
+
+---
+
+## UPDATE — 24 November 2026 (new section only; everything above is unchanged)
+
+### 126. DQN study, Steps 1 to 10 (plain-words reference; read this when asked about DQN)
+
+**Status:** Session 3 (DQN vs PPO) finished. All numbers in examples are made up to show the idea (illustrative). Items marked (verify) are from memory or from an earlier reading and were not checked against the DQN papers or the Stable-Baselines3 docs. The arm names D1, D2, D3 are my inference from the session text, which refers to a "Section 135" that is not in the md I have; also note that in Section 94 of the roadmap the old arm D was the model-based arm and the old arm E was DQN, so check the naming before using it.
+
+#### A. Plan of the session
+1. What is a Q-value? 2. Acting from Q-values. 3. How Q is learned (Bellman). 4. Why a table fails, how a network replaces it. 5. Replay memory. 6. Target network. 7. The whole DQN loop and its knobs. 8. Over-optimism and Double DQN. 9. DQN and DDQN vs PPO. 10. Connection to our agent and the arms D1, D2, D3. All ten are done.
+
+#### B. Step 1: what is a Q-value
+- Picture: a menu with a score for each dish. PPO's critic scores the situation; a Q-value scores each action in the situation.
+- **Q(situation, action) = the total future score expected if this action is taken now and the agent plays well afterwards.** Same kind of number as the discounted return (gamma), tied to one action.
+- Example (belief U about 0.45): wait -3.0, rate-limit -1.5, temporary block -2.0, isolate and alert -2.6. All negative because every outcome has some cost; only the ranking matters. Best: rate-limit.
+- **Difference from PPO:** PPO learns the behavior directly (actor outputs probabilities; the critic only helps). DQN learns only the scores and derives the behavior: pick the highest Q. There is no separate actor.
+- Fit: needs a small discrete action set (our 4-rung ladder), not a continuous action. The network takes the same observation as the PPO policy; the last layer has one output per action and no softmax (scores, not probabilities).
+
+#### C. Step 2: acting from Q-values (epsilon-greedy)
+- Always taking the best score never tries the others, and early scores are guesses. **Epsilon-greedy:** with probability epsilon pick a random action, otherwise the highest Q.
+- Example (epsilon 0.1, 4 actions): best action chosen 0.9 + 0.025 = 92.5%; each other action 2.5%.
+- **Schedule:** start high (1.0 = fully random), decay to a floor (e.g. 0.05). Linear example: 1.0 to 0.05 over 100,000 steps; at step 50,000, epsilon = 1.0 - 0.95 x 0.5 = 0.525.
+- **Epsilon is a setting we choose (hyperparameter), not learned.** From memory, SB3 DQN starts at 1.0, ends at 0.05 and decays over the first 10% of training (verify). Consequence: epsilon start, end and decay length are extra knobs that need a fair search; PPO has no counterpart.
+- The Q-BIRD DQN baseline reportedly lists a linear-decay schedule, a 50,000-transition replay buffer, a target update every 500 steps and 64 units per layer (from an earlier reading of arXiv 2606.07796, verify).
+- **At deployment exploration is off** (epsilon about 0): the live agent picks the best Q, which is deterministic and easier to explain.
+- **Difference from PPO:** PPO explores by sampling its own probabilities (guided, plus the entropy bonus). DQN's random actions are blind and hand-tuned.
+- **Masks:** for a forbidden action (e.g. block before rate-limit) set its Q to a very low value before choosing; random exploration must also skip masked actions.
+
+#### D. Step 3: how the scores are learned (Bellman idea)
+- **Q(situation, action) = reward just received + gamma x best Q of the next situation.** The agent does not wait for the episode to end; after every step it forms a better guess (the target) and moves the old guess toward it.
+- Example (gamma 0.9): guess -1.5, reward -0.7, best next Q -0.2. Target = -0.7 + 0.9 x (-0.2) = -0.88. Gap (TD error) = 0.62. Learning rate 0.1: new Q = -1.5 + 0.1 x 0.62 = -1.438.
+- **Bootstrapping:** the "-0.2" in the target is itself an estimate, so the agent learns from its own guesses. Fast, but it is the root of the problems fixed in Steps 5, 6 and 8.
+- Same shape as the PPO one-step advantage (reward + gamma x value(next) - value(now)); the difference is what is done with the gap: PPO turns it into a push on the action's probability; DQN uses it to correct the score number.
+- The max in the target makes DQN **off-policy**: it learns the value of the best behavior even while exploring randomly.
+- **When epsilon and the correction happen:** epsilon is used when choosing the action; the Bellman correction is used afterwards, when learning from the result. Epsilon does not appear in the correction.
+- Worked example: scores wait -3.0, rate-limit -1.5, block -2.0, isolate -2.6; epsilon 0.1, gamma 0.9. Random draw 0.04 (below 0.1) so a random action, isolate, is taken. Reward -1.2, best next Q -0.5. Target = -1.2 + 0.9 x (-0.5) = -1.65. Gap = -1.65 - (-2.6) = +0.95. New score = -2.6 + 0.1 x 0.95 = -2.505. Only the taken action's score changes. The correction is the same whether the action was random or greedy, which is why exploring pays off.
+- At deployment both epsilon and the learning step are off.
+
+#### E. Step 4: why a table fails, what replaces it
+- A table needs one row per situation. Our observation is continuous: even 12 belief numbers cut into 10 levels each give 10^12 rows, and the agent would almost never see the same situation twice.
+- **A neural network replaces the table ("Deep" in DQN):** input = observation, output = one Q per action (4 numbers), small size (e.g. 2 hidden layers of 64 units). Similar situations (U 0.45 and 0.47) give similar outputs, so learning generalizes.
+- Learning: push the output for the action taken toward the target. Example: network said -2.6, target -1.65, error 0.95, squared loss 0.9025; gradient descent adjusts the weights. Only the taken action's output enters the loss.
+- Catch: one weight change moves many situations at once, and the target comes from the network's own guesses, so learning can be unstable. Two fixes follow.
+
+#### F. Step 5: replay memory
+- Problem: consecutive steps look alike (20 attack steps in a row), so learning in order pushes the network in one direction, and each experience is used once and discarded.
+- **Replay memory:** after every step save a card (situation, action, reward, next situation, episode-ended flag) in a fixed-size memory (e.g. 50,000; oldest overwritten). Each update samples a random batch (e.g. 64), builds targets with the Step 3 formula and does one gradient step. Training usually starts after a warm-up.
+- Example: 6 cards (3 calm, 3 attack). Without replay the network sees A1, A2, A3 and drifts to "everything is an attack"; with replay a random batch of 4 mixes calm and attack.
+- **Episode-ended flag:** when an episode ends there is no next situation, so the target is just the reward.
+- Gains: breaks streaks; reuses data (sample-efficient, a reason DQN could win in a limited-data regime, which is a hypothesis to test); smoother updates.
+- Allowed because DQN is off-policy (old cards are fine since the target uses the best next score). PPO cannot do this: its update assumes data from the current policy, so it discards the batch.
+- Catches: rare events can be sampled too rarely (prioritized replay samples large-error cards more often; Rainbow DQN bundles it with dueling networks and multi-step learning, verify); memory size is a knob; stale cards matter in multi-agent settings (Paper 3); a recurrent version (D3) needs sequences, not single steps, in the memory.
+- Sizing: 50,000 cards = about 416 episodes of 120 steps.
+
+#### G. Step 6: target network
+- Problem: the target uses the same network that is being trained, so every weight change moves the target (a student grading his own exam against an opinion that changes as he learns).
+- **Two networks:** the online network (trained every update, picks actions) and a **target network** (a frozen copy used only to compute the "best next score" inside the target, overwritten with a copy of the online network every N steps; N = 500 in the Q-BIRD baseline, verify).
+- Example (gamma 0.9, reward -0.7): without a target network the next best score moves from -0.20 to -0.40 after one gradient step, so the target jumps from -0.88 to -1.06 with no new experience. With a frozen copy it stays at -0.88 for the whole interval.
+- Gains: much more stable; costs one extra small network.
+- Catches: slower to pass lessons on (a longer interval is steadier but slower); a "soft update" variant drifts the target slowly toward the online network each step (general knowledge, verify the default); the interval is a knob that can matter as much as the learning rate.
+- The two fixes together: replay fixes which data the network sees, the target network fixes what it chases. (DQN history, 2013 and 2015 work, is from memory; verify citations.)
+
+#### H. Step 7: the whole DQN loop
+1. See the situation. 2. Choose an action: highest Q, or random with probability epsilon (online network, epsilon). 3. Environment returns reward and next situation. 4. Save the card. 5. If the memory has enough cards and it is a learning step, sample a random batch. 6. Build each target with the frozen network: reward + gamma x best next score (skip the second part if the episode ended). 7. One gradient step on the online network. 8. Every N steps copy online into target. 9. Shrink epsilon. 10. Repeat. Steps 5 to 8 are not done at every step (warm-up, train frequency).
+
+| Knob | Controls |
+|---|---|
+| learning rate | size of each weight change |
+| gamma | how much the future counts |
+| epsilon start, end, decay length | how long and how much it explores |
+| replay memory size | how many past cards are kept |
+| warm-up steps | cards collected before learning starts |
+| batch size | cards per update |
+| train frequency | one update every how many steps |
+| target update interval | how often the frozen copy is refreshed |
+| network size | layers and units |
+| loss and gradient clipping | how big errors are treated |
+
+- From memory SB3's DQN defaults are epsilon 1.0 to 0.05 over the first 10% of training, a very large buffer and a large target interval (verify before tuning).
+- Fairness: DQN has more interacting knobs than PPO, so it needs a real search budget (same budget as the PPO arms, with the grid-edge check).
+- Trace (warm-up 100, learn every 4th step, target refresh every 500): steps 1 to 100 act and save only; step 104 first update (64 random cards); step 108 another; step 500 refresh.
+
+#### I. Step 8: over-optimism and Double DQN
+- **Problem:** the target uses the max over the next situation's scores. Those scores are the network's guesses, with errors, and the max of noisy numbers is biased upward (the best-looking error wins). The optimistic target then spreads through bootstrapping.
+- Example: all four next actions truly worth -1.0, network estimates -1.3, -0.7, -1.1, -0.9. The max is -0.7, which is 0.3 too optimistic, every time.
+- **Why it may matter for our agent (reasoning, not tested):** rare situations (high U) have few cards and noisy estimates, so over-optimism is strongest where decisions matter most, and the agent could overrate heavy actions such as isolate, which would raise false isolations.
+- **Double DQN fix:** the online network chooses the next action, the target network scores it. Target = reward + gamma x (target network's score for the action the online network picked). The two networks have different errors, so the luck that made one pick an action does not carry into the other's score. In the example, if the online network cannot tell the actions apart, the scores average to -1.0, the true value, instead of the max's -0.7.
+- Cost: one line of code; no extra network. It does not remove the bias completely and can sometimes underestimate; how much it helps depends on the task, so it is tested as its own arm (D2 vs D1).
+- Library catch (from memory, verify): SB3's DQN is probably the plain version and does not offer Double DQN or the other extensions, so D2 may need another library (a single-file implementation you can edit) or a small custom change.
+- Origin: van Hasselt and colleagues' Double DQN work (from memory, verify the citation).
+- Reference answers to the Step 8 checks: all four true -2.0 and estimates (-2.4, -1.6, -2.2, -1.8): the normal max gives -1.6, 0.4 too optimistic. In Double DQN the online network chooses and the target network scores.
+
+#### J. Step 9: DQN and DDQN vs PPO
+- **On-policy vs off-policy:** PPO needs data from the policy being improved (its update uses the ratio new/old probability and advantages for the old policy) so it discards the batch after the update. DQN's target uses the best next score whoever chose the action, so cards from any past agent stay valid.
+- **Data reuse:** PPO example: collect 2048 steps, 10 epochs, discard (each step used about 10 times, once). DQN example: learn every 4 steps with batches of 64, so each new step buys 64 / 4 = 16 sample slots, and a card can be sampled over many updates for as long as it stays in the memory. DQN is often called more sample-efficient (fewer real environment steps) but costs more computation per step. In our simulator steps are cheap, so the advantage matters mainly in the limited-data regime (a new home with a few days of traffic). This is a hypothesis.
+- **Stability:** PPO's safety is the clip; DQN's are the replay memory and target network. DQN's weak spots: over-optimism, sensitivity to target interval, memory size and epsilon. PPO needs a good critic and tuning but has fewer interacting knobs. The mix of bootstrapping, off-policy data and a neural network is known as risky (general knowledge, verify), which is why DQN needs its two fixes.
+
+| Topic | PPO | DQN |
+|---|---|---|
+| What is learned | behavior plus critic | scores; behavior = highest score |
+| Exploration | sampling plus entropy bonus (guided) | epsilon schedule (blind, hand-tuned) |
+| Data | batch discarded after the update | replay memory reuses cards |
+| Actions | discrete or continuous | discrete only (fine for the 4-rung ladder) |
+| Memory over time | RecurrentPPO is simple | recurrent DQN needs sequences in replay (arm D3), harder |
+| Multi-agent (Paper 3) | IPPO and MAPPO are the usual family | old cards can describe a world other learners changed, so people lean to PPO-style methods (general knowledge, verify) |
+| Federated (Paper 2) | federate actor and critic weights | federate the online network; each home keeps its own replay memory |
+
+- **Roadmap link:** FRL-IPS, the Candidate 1 benchmark, uses a federated Double DQN (from the roadmap), so D2 is needed for Paper 2 anyway.
+- **Literature (thin, snippet-level, verify):** Q-BIRD compared DQN, DRQN and PPO variants; a Siamese + PPO zero-day paper reports PPO over DQN and SAC for its task. Each is one task, abstracts only. Treat "PPO wins" and "DQN wins" as both unproven for our agent.
+- Reference answers to the Step 9 checks: (1) DQN can learn from an old card because its target uses the best next score regardless of who chose the action; PPO's update depends on the old policy's ratio and advantages, so old batches are stale. (2) In the limited-data case DQN or DDQN is hypothesized to help more because replay reuses every card; test with the same small budget of real windows for every arm, measuring the return reached and the real steps needed to hit a target return, over at least 10 seeds.
+
+#### K. Step 10: connection to our agent and the arms
+- **Same everything except the learner:** the same environment, observation, reward, ladder, masks and step size as the PPO arms. Only the learning method changes. The viewers and belief module stay frozen; only the online network learns. The network has 4 outputs; masked actions get a very low score.
+
+| Arm | What it is | Change from the one before |
+|---|---|---|
+| D1 | DQN | baseline of the DQN family |
+| D2 | Double DQN | one line in the target (online picks, target scores) |
+| D3 | Recurrent DQN | memory in the network; sequences stored in the replay memory |
+
+- **Belief axis:** each arm can be run with window features only, or with the fused DS belief added, mirroring G1 vs G3. A core subset to start with (suggestion): D1 and D2, each with and without belief; D3 optional.
+- **Hypotheses to test (not claims):** DQN or DDQN needs fewer real steps in the limited-data regime; PPO is steadier across seeds; DDQN lowers false isolations in rare high-U situations; belief input helps both families; D3 is harder to tune than RecurrentPPO.
+- **Fairness rules:** same environment, reward, ladder, step size, observation and masks for every arm; same tuning budget and search ranges, with the grid-edge check (DQN has more knobs, so equal effort, not equal number of settings); report real environment steps to a target return and also wall-clock or gradient updates (DQN trades environment steps for compute); at least 10 seeds with bootstrap intervals; same held-out evaluation; report failed or unstable runs.
+- **Decisions still open:** budget per arm; which subset to run; how D3 stores sequences; which library implements D2 and D3 (see Step 8 catch).
+
+#### L. Fast answers to likely questions
+| Question | Short answer |
+|---|---|
+| Does DQN have a policy network? | No. It learns Q-scores and acts on the highest one. |
+| Where does exploration live in DQN? | In a hand-set epsilon schedule, separate from learning. |
+| Why a replay memory? | To break streaks of similar steps and reuse data. |
+| Why a target network? | To keep the Bellman target from moving with every update. |
+| What does Double DQN fix? | Over-optimism from taking the max of noisy guesses. |
+| Why not just DQN for everything? | More interacting knobs, over-optimism, harder recurrent and multi-agent versions; whether it beats PPO for our agent is an experiment. |
+| Is DQN on-policy? | No, off-policy: it learns from old cards. PPO is on-policy. |
+| Does epsilon appear in the Bellman correction? | No. Epsilon only picks the action; the correction runs afterwards. |
+
+#### M. Open items
+1. Check the arm names D1, D2, D3 against the roadmap's "Section 135" and against the old arm names (Section 94: D = model-based, E = DQN).
+2. Verify against the DQN papers and the SB3 docs: defaults, Double DQN support, Rainbow components, soft-update default, Q-BIRD DQN settings, and all citations given from memory.
+3. Next study topics (suggestion): the formal belief-in-PPO recap, world models and MBRL basics, experiment design; then back to the postponed Session 1 decisions (episode end and U response, sanity-check baselines, action-effect numbers, reward weights).
+4. The user reported earlier low confidence in PPO Steps 9 to 11; revisit with one tiny example each (the nudge, the advantage, the clip) if still unclear.
+5. Carry forward all earlier open items.
