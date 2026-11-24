@@ -6883,3 +6883,96 @@ CICDDoS2019 (MEMORY) and NF-UNSW-NB15 (2020, 20 attack types, flow-based, SEARCH
 3. Decide the cross-dataset feature mapping before any cross-dataset experiment.
 4. Confirm whether the York smart-home dataset (Shafi) is released and whether SHARP and BCCC contain any cross-protocol attack.
 5. Carry forward all open items from earlier sections.
+
+---
+---
+
+# UPDATE — 24 November 2026 (new section only; everything above is unchanged)
+
+## 143. SEVERE NOTE: WORKING STANDARDS FOR RESEARCH AND SIMULATION (read before every experiment and every submission)
+
+**Why this exists:** my first paper received many reviewer comments, partly from inexperience, and the back-and-forth cost a lot of time. The rule from now on: find the weaknesses myself, in a structured way, before a reviewer or a bad result finds them for me. This note has two halves: a review gate for papers, and a working discipline for experiments. Both apply to every paper in this roadmap and to the simulator PC.
+
+### 143.1 Pre-submission review gate (papers, proposals)
+1. Run a reviewer-style critique **before** submission: novelty, soundness, baselines, statistics, reproducibility, claims vs evidence, related work, writing.
+2. Fix major findings first, then minor ones, then run the review again.
+3. Keep a list of every past reviewer comment and make each one a permanent check item.
+4. Check every claim against the "do not claim" lists in this roadmap (no "first" claims without the database sweep).
+5. Verify every citation, number and venue deadline against its source.
+6. Get one human read (supervisor or colleague) after the review pass.
+
+### 143.2 The mindset (important)
+- A model is trained to think the way we think. If we can see something is wrong in an output, the model can be taught to see it too. So a weak result is a signal to investigate, not a verdict.
+- Results can almost always be improved **in ethical ways**. There are many legitimate levers (143.7), and a small tweak or a smart swap can change the whole outcome. The same logic can be coded in thousands of ways.
+- **Working stance: assume a fix exists until a test shows otherwise.** "It won't change" or "that is a limitation" is never an answer by itself. It becomes an answer only after a concrete test has been run and the evidence recorded.
+- Troubleshooting is never wasted time. Every run, good or bad, shows a pattern, and the pattern points to the weak part. Working logically takes more time at the start and scales much better, especially because this project is a **sequence of models linked together**: no single stage may be allowed to flop silently.
+- "Test this, test that and hope it works" is replaced by: look at the evidence, form a hypothesis, predict what a change will do (including what it might break), change one thing, rerun, log.
+
+### 143.3 Two versions of every pipeline: label-aware reference and deployable
+Keep two versions of the same experiment and compare them.
+
+| | Label-aware reference version | Deployable version |
+|---|---|---|
+| Does each window (tuple) carry its true label into the code? | Yes (it knows the label) | No. It sees only what a real system would see |
+| Purpose | A diagnostic and an upper bound: shows what is possible if a given stage worked perfectly | The real system; the only version whose results are reported as results |
+| Typical use | Swap one stage at a time with its label-aware counterpart (for example true labels instead of a viewer's output) to see which stage loses the most | Everything else |
+
+- The gap between the two versions locates the loss: in the viewer, in the conversion to masses, in the fusion rule, in the windowing, or in the labels themselves.
+- **Hard rule:** the label-aware version is never reported as a result and never shares code paths that could leak labels into the deployable one. Interpretation note: this reading of "the persistent version where the tuple knows the label" is mine; correct it if you meant something different.
+
+### 143.4 Clean pipeline order (every dataset, every time)
+1. **Read** the dataset and write down what it contains (classes, devices, time order, benign share).
+2. **Clean** it (duplicates, missing values, inconsistent labels, infinite values) and log what was removed.
+3. **Audit before touching anything:** class percentages overall, per window, per step; per-device counts; duplicate windows; whether windows overlap.
+4. **Split first** (train, validation, held-out families, test), with the held-out families chosen before any tuning and never used for tuning.
+5. **Preprocess** on the training split only (scalers, encoders, feature selection), then apply to the others.
+6. **Imbalance check:** is oversampling (for example SMOTE) needed or are class weights, a different loss or a different window enough? Oversampling is applied **only to the training split**, never before the split, and its effect is compared against the alternatives and logged.
+7. **Seeds:** fix the seed protocol, run enough seeds, keep tuning seeds separate from evaluation seeds.
+8. **Tune on validation only**, with a grid-edge check on every tuned value.
+9. **Run, then troubleshoot** (143.5).
+
+### 143.5 The troubleshooting loop (after every run or Colab output)
+1. **Record** the result next to the exact settings (window, step, seed, model, loss, parameters) in a results ledger.
+2. **Read the pattern, not only the headline number:** per class, per attack family, per window size, per device, confusion matrix, calibration, false alarms at a fixed detection rate, and the state percentages inside each window.
+3. **Name the cause:** state which parameter or combination of parameters produced the output ("this belief is weak because the window is too short for scan traffic and the viewer sees only 3% of that class"). A cause that cannot be tested is only a guess.
+4. **Predict the side effects** before changing anything: if this fixes problem A, can it create problem B, and could it make things worse overall?
+5. **Change one thing at a time** (or a planned small set), rerun, compare against the ledger.
+6. **Stop-and-think rule:** if three fixes in a row do not move the result, stop tuning and move one level up: question the window, the labels, the model family or the framing.
+7. **Escalate when a stage is weak:** check the stage on its own first (does this viewer alone work?), then the link to the next stage (does its output mean what the next stage expects?), then the whole chain.
+
+### 143.6 What results to look at (not accuracy alone)
+Accuracy can look high for the wrong reason, especially with imbalance. Report macro-F1, per-class recall, false-alarm rate at a fixed detection rate, novelty AUROC on held-out families, calibration, R2 where a regression-type output exists, and cost. A high number is only accepted after the sanity checks in 143.8.
+
+### 143.7 Legitimate levers when a stage is weak (a checklist to think outside the box)
+- **Data side:** window size and step; overlap; feature set and aggregation; scaler; label grouping into states; class weights, oversampling or undersampling (train split only); device-level or time-aware splits.
+- **Model side:** model family and depth (for example a shallower or deeper network, a recurrent vs a feed-forward model, a different architecture for the same role); loss function; regularization; learning rate and schedule; early stopping; calibration (temperature scaling).
+- **Belief side:** the viewer panel (swap one viewer for another of the same role); the conversion recipe and its endpoints; trust weights; the fusion rule; the memory keep factor; the decision thresholds, chosen on validation.
+- **Framing side:** whether the target classes are the right ones; whether the task as defined has a different, easier formulation.
+- Combinations matter: a small tweak in one place can fix the whole logic, and a "fix" in one place can break another, which is why step 4 of the loop exists.
+
+### 143.8 Ethical rules (no data manipulation, ever)
+- Never tune on the held-out families or the test split. Never alter labels or drop hard examples to raise a score. Never select seeds or runs after seeing results.
+- Report every variant tried, including the ones that failed, and keep the ledger as part of the evidence.
+- **Leakage checks before believing any good number:** duplicate or near-duplicate windows across splits; overlapping windows across train and test; the same device or session on both sides; scaler or feature selection fitted on the full data; labels encoded in features. A quick test: shuffle the labels and confirm the score drops to chance; train on half the devices and test on the others.
+- Improvements must come from better modeling, not from a more forgiving evaluation.
+
+### 143.9 Ceiling check (the honest part)
+- Not every limit is fixable: label noise, classes that overlap in feature space, or information that is simply not in the window can cap what any model can do.
+- So before declaring a result final, estimate the ceiling: the label-aware reference (143.3), a simple strong baseline, a repeat with different windows, and a look at confusion between specific classes.
+- If the ceiling is low, the fix is in the framing (windows, classes, features, task definition), not in massaging numbers. If the ceiling is high and the system is far below it, a fix exists and the troubleshooting loop will find it.
+
+### 143.10 Instruction for the simulator-side assistant (Claude Code or any coding assistant)
+When working on this project:
+1. **Do not answer "the outcome won't change" or "this is a limitation" without a test.** Run the smallest experiment that checks it and report the evidence.
+2. **Treat the user's logical reasoning as a hypothesis to test immediately**, not to argue against. Assume a fix exists until a test shows otherwise, then report what the test showed.
+3. **Think beyond the obvious fix:** propose at least two or three alternatives (a different window, a swapped component, a different loss, a different split of the problem) and say what each might break.
+4. Follow the pipeline order (143.4) and the troubleshooting loop (143.5); keep a change log and the results ledger.
+5. Never use label information in the deployable path; never tune on held-out or test data; never hide failed variants.
+6. When a stage is weak, isolate it first (stage alone, then link to the next stage, then the whole chain).
+
+### 143.11 Open items
+1. Paste the past reviewer comments here and turn them into a personal checklist (143.1, item 3).
+2. Decide whether to save a reusable reviewer skill (a fixed checklist and report format) for pre-submission critiques.
+3. Start the results ledger on the simulator PC (settings, seed, result, hypothesis, outcome), so every fix is traceable.
+4. Define the label-aware reference version for each stage of the belief pipeline (viewers, conversion, fusion) so the gap can be measured stage by stage.
+5. Carry forward all open items from earlier sections.
