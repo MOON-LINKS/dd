@@ -7120,3 +7120,235 @@ When working on this project:
 3. Next study topics (suggestion): the formal belief-in-PPO recap, world models and MBRL basics, experiment design; then back to the postponed Session 1 decisions (episode end and U response, sanity-check baselines, action-effect numbers, reward weights).
 4. The user reported earlier low confidence in PPO Steps 9 to 11; revisit with one tiny example each (the nudge, the advantage, the clip) if still unclear.
 5. Carry forward all earlier open items.
+
+---
+
+## UPDATE — 26 November 2026 (new sections only; everything above is unchanged)
+
+Today: a plain-words recap of DQN and PPO (kept separate), how to test them fairly, how to read the first simulation result (DDQN above PPO, then PPO with perfect perception at 0.93), the oracle-as-ceiling framing, a plan for a harder second simulation, and a list of new contribution candidates. Items marked (suggestion) are my proposals, not decisions. Items marked (verify) were not checked against sources. Numbers in examples are illustrative unless marked "reported by the user", and the user's numbers are from memory (no code available in the chat), so treat them as unverified.
+
+**Working rules for this chat (recorded):** coding and running simulations happen elsewhere; this chat builds structure, basis and contributions. The md is written only when the user asks, or when the context is about to run out.
+
+### 127. DQN and PPO in plain words (kept separate on purpose)
+
+#### A. DQN, the score keeper
+Picture: a waiter with a menu where every dish has a score for tonight; he orders the best-scored dish.
+1. Learns a score for each action in each situation (e.g. rate-limit here is worth -1.5, wait -3.0).
+2. Acts by picking the highest score. Nothing else decides. There is no separate policy.
+3. Explores by picking a random action a small percent of the time (epsilon). The percent starts big, shrinks, and is set by hand.
+4. Learns after each step: "what did I get, plus what do I expect next?", then nudges the old score toward that answer (the Bellman idea: new score = reward + gamma x best next score).
+5. Problem 1, similar steps in a row. Fix: the replay memory (a box of past experiences, learned from in random mixed batches).
+6. Problem 2, the target moves because it is built from its own guesses. Fix: the target network (a frozen copy, refreshed now and then).
+7. Problem 3, scores come out too high, because the best of noisy guesses is the luckiest one. Fix: Double DQN (one network picks the action, the other scores it).
+8. Reuses old experiences again and again, so it is often good with little data.
+9. Limits: only a small list of actions (our 4-rung ladder is fine) and many settings that interact.
+10. When deployed: no random picks and no learning; it takes the highest score.
+
+One-paragraph version: DQN is a score keeper, not a policy and not a coach. It scores each action, takes the best (with a small shrinking random addition), learns the scores with the Bellman equation, and needs two fixes (replay memory and target network). Double DQN fixes over-optimism. It reuses old data (off-policy), but has more knobs than PPO.
+
+Corrections to the user's own draft of this paragraph: "policy coach" describes PPO, not DQN; "cost and positive outputs" was read as over-optimism (scores come out too high).
+
+#### B. PPO, the habit coach
+Picture: a guard with a habit for each situation, and a coach who improves the habits after each block of shifts.
+1. Learns the habits themselves: for each situation, how likely each action is (e.g. wait 10%, rate-limit 60%).
+2. Acts by rolling the dice with those chances. Good actions are likelier, others still happen sometimes.
+3. Explores through the chances themselves; a small bonus (entropy) stops them collapsing to 100% too early.
+4. A helper network (the critic) judges "how good is this situation?", which gives the yardstick for better or worse than expected.
+5. Learns by playing a batch, asking per action "better or worse than expected?", and making better ones likelier and worse ones less likely.
+6. Safety rule: each update may change the chances only a little (the clip).
+7. Uses a batch for a few passes, then throws it away (on-policy).
+8. Strengths: usually steady, fewer settings, handles memory networks easily.
+9. Limits: needs more fresh experience; depends on a good critic.
+10. When deployed: no learning; usually takes its most likely action.
+
+Clarification: PPO acts like a chance-based chooser, using learned probabilities that add to 100%. Say "probability", not "possibility": in the belief-method study, possibility theory is the fuzzy family with its own meaning.
+
+#### C. Side by side
+| | DQN | PPO |
+|---|---|---|
+| What it learns | scores for actions | habits (chances per action) |
+| How it picks | highest score | rolls the dice by its chances |
+| Exploring | random percent, hand-set (epsilon) | built into the chances |
+| Old data | kept and reused (replay) | thrown away after the update |
+| Stability tools | replay memory, target network | the small-update rule (clip) |
+| Usually | efficient with data, fussy to tune | steadier, needs more fresh data |
+| In our design | arms D1, D2, D3 (names to be checked, see Section 126) | arms G1 to G5 |
+
+Memory aids: DQN = "learn the scores, order the best, sometimes try something random." PPO = "improve the habits a little at a time, never change too much at once." Same for both: same environment, observation, reward and ladder, and the same fair tuning effort.
+
+### 128. Testing DQN vs PPO fairly: how to get PPO's best score honestly
+
+Stance recorded: the goal is to make sure PPO is tuned as well as it can be, not to make PPO win. A comparison where PPO gets many more tuning trials than DQN (or the reverse) proves nothing.
+
+**PPO tuning checklist** (defaults are starting points; verify against the SB3 docs):
+| What to do | Why it helps |
+|---|---|
+| Normalize observations and rewards (SB3 has a wrapper for this, VecNormalize, verify) | our rewards are all negative costs and inputs have very different scales (belief 0 to 1, traffic rates in the thousands); unscaled inputs make the critic and advantages noisy |
+| Sweep gamma {0.95, 0.98, 0.99, 0.992} | sets how far ahead the agent looks |
+| Watch entropy; raise the entropy coefficient if it collapses early (near zero in the first 5% of training) | exploration stops too early otherwise |
+| Learning rate (lower, or decayed) | too high gives unstable, jumpy learning |
+| n_steps and parallel environments | a batch should cover many episodes, calm and attack |
+| Clip range and epochs | if many samples are clipped or the policy drifts, lower epochs or clip |
+| GAE lambda about 0.9 to 0.97 | noise versus bias dial of the advantage |
+| Network size (e.g. 64x64 vs 128x128) | too small underfits, too big overfits |
+| Action masks (MaskablePPO) | stops wasted exploring of forbidden actions |
+| Train long enough | check that the return curve has flattened |
+| Recurrent arms (G2, G4) | need extra care (hidden size, sequence length); reviewers attack an under-tuned recurrent baseline |
+
+Monitor while training: return curve, entropy, value loss, fraction of clipped samples.
+
+**Fairness rules:**
+- Same tuning budget for both. DQN has more knobs (epsilon schedule, memory size, target interval, train frequency), so give equal effort, not an equal number of settings.
+- Tune on separate seeds, evaluate on fresh seeds; never pick the best setting by looking at test results.
+- Grid-edge check on every tuned value (widen the range if the best sits at the edge).
+- Same environment, reward, observation, ladder and masks for every arm.
+- At least 10 seeds with bootstrap intervals; report failed or unstable runs, not only the best.
+- Report real environment steps and compute (DQN trades one for the other).
+- Evaluate both with the same deterministic choice (highest score for DDQN, most likely action for PPO), not sampled PPO against greedy DDQN.
+- Include sanity baselines: random policy, a hand-written threshold rule on U, Omega and K, an oracle. Also run gamma = 0: if the gap does not change, the sequential part helped neither method.
+
+**What to accept up front:** PPO may not win. In a limited-data case (a new home with a few days of traffic), DQN or DDQN may do better because replay reuses every card. That is a result, not a failure.
+
+### 129. First simulation result and how to read it
+
+**Reported by the user (from memory; no code available in the chat; unverified):**
+- In the first simulation on CICIoT2023, the best option was DDQN with a higher score than all PPO arms: about 0.23 versus PPO about 0.12.
+- The user first recalled the metric as F1, then corrected it: the score is **normalized return**, not F1.
+- A PPO setup with a "possibility belief algorithm" reached 0.4, and a setup with perfect perception reached 0.93.
+- The environment details (replay of dataset rows versus a simulator where actions change later traffic) were not confirmed.
+
+**Correction to my own earlier answer:** I had argued that F1 is a classification score, so replay favours DDQN. That reasoning does not apply to normalized return. The question of whether the environment is closed-loop is still open and still matters.
+
+**Likely reading of the numbers (to be confirmed by the user):**
+| Number | Likely meaning |
+|---|---|
+| 0.93 | PPO with perfect perception: the oracle ceiling (the agent sees the true state) |
+| 0.4 | PPO with the possibility-based belief, or the best arm overall (unclear) |
+| 0.23 and 0.12 | DDQN and PPO from the earlier test (unclear which belief each used) |
+
+**What can be said now:** in the first simulation DDQN scored higher than the PPO arms; with perfect perception PPO reaches 0.93, so the task is solvable and PPO can learn it. It cannot yet be said that PPO is better than DDQN (or the reverse) in general, because DDQN's oracle and belief-based scores are unknown and tuning effort is unknown.
+
+**Checks before trusting 0.23 versus 0.12:**
+1. What exactly is the number (return, normalized how)? Is higher better for both?
+2. Is the gap larger than the noise (seeds, spread; one run each can differ by that much)?
+3. Did both get the same tuning effort (defaults for PPO, no normalization, entropy collapse)?
+4. Is the environment closed-loop? If it replays dataset rows, actions do not change the next window and the task is close to a contextual bandit, where off-policy value methods often look good. Quick test: gamma = 0 for both.
+5. Is evaluation on held-out traffic and attack families, with viewers also trained without them (replay memory can memorize training windows)?
+6. Same evaluation mode (deterministic for both)?
+7. Where do the scores sit against random, threshold-rule and oracle baselines?
+8. Same reward, masks, observation, belief or no belief, episode length and training steps?
+
+**Open questions to the user:**
+- How is normalized return defined (e.g. (return - random) / (oracle - random))? If random is 0 and oracle is 1 by definition, 0.93 cannot be the oracle.
+- Is "possibility belief" fuzzy/possibility theory, or did the user mean probability? If possibility theory, label it as its own arm against the Dempster-Shafer belief.
+- Which score belongs to which setup, and how many seeds?
+- Does the simulation replay rows or change traffic after actions?
+
+### 130. Part 2 plan: why PPO might help for our task, and a harder simulation
+
+Context: the professor does not accept "PPO is better" while DDQN scored higher, and the user wanted to show PPO's advantage. Advice recorded: do not engineer a PPO win; state hypotheses, test them in environments where they should show, and report whatever comes out. Part 1 claim that is safe: "in a static replay setting, DDQN did better".
+
+**Hypotheses about why PPO might be better (hypotheses, not facts; literature is mixed: FRL-IPS uses DDQN, a Siamese zero-day paper picked PPO, Q-BIRD compared both):**
+| # | Hypothesis | Why PPO might win | Where it should show |
+|---|---|---|---|
+| H1 | actions have delayed consequences | credit must flow across many steps; replay-based learning suits steps that stand alone | closed-loop environment |
+| H2 | attacker adapts or traffic drifts | old replay cards describe a world that no longer exists; PPO trains on fresh data | shifting attacker or MMPP parameters |
+| H3 | agent needs memory (partial observability) | RecurrentPPO is simple; recurrent DQN needs sequences in replay and is harder to tune | noisy or ambiguous observations |
+| H4 | steadier and easier to tune | fewer interacting knobs; clip limits damage | many seeds, spread and failed runs |
+| H5 | better for later papers | IPPO and MAPPO are the usual multi-agent family; continuous actions (exact rate limits) work | Papers 2 and 3, a design argument not a result |
+
+H1 to H4 are testable now; H5 is a design argument.
+
+**Environment ladder (write the predicted winner before running):**
+| Level | What changes | Tests | Prediction |
+|---|---|---|---|
+| E0 (done) | replay, no action effects | baseline | DDQN |
+| E1 | actions change future traffic (rate-limit lowers the rate, block removes the device) | H1 | open question |
+| E2 | damage grows over steps; attacks have stages | H1 | PPO may close the gap |
+| E3 | attacker or MMPP parameters shift during training and testing | H2 | PPO may win |
+| E4 | noisy or ambiguous observations, with and without the belief | H3 | recurrent PPO versus recurrent DDQN |
+| E5 | held-out attack families and a small-data regime | generalization | DDQN may win again |
+
+**Outcomes and what to claim:**
+| Outcome | Claim |
+|---|---|
+| PPO wins in E1 to E3 | PPO is better under those conditions, with evidence |
+| DDQN wins everywhere | use DDQN as the main algorithm; the core contribution (belief with unknown state, graded ladder) works with any learner and the Paper 2 benchmark (FRL-IPS) already uses DDQN |
+| Mixed | a crossover map showing where each wins, which is a result in itself |
+
+**What to tell the professor (wording suggestion):** "In static replay, DDQN scored higher. PPO's expected advantages (delayed consequences, adaptive attackers, memory, stability) only appear in closed-loop settings, so I test them in environments E1 to E5 with equal tuning, and report where each method wins." A negative result for PPO is still publishable; forcing a PPO win is not.
+
+### 131. The oracle as a ceiling: how to present "PPO reaches 43% of its potential"
+
+The framing is legitimate with three adjustments.
+
+**What can be said:** with perfect perception PPO reaches 0.93, so the task is solvable and the learner works; with the user's belief it reaches 0.40, about 43% of the ceiling (0.40 / 0.93).
+
+**Adjustments:**
+1. **Compute the share of the gap closed against a random baseline:** (score - random) / (oracle - random). Example (illustrative): random 0.05 gives (0.40 - 0.05) / (0.93 - 0.05) = about 40%. If normalized return already sets random to 0 and the oracle to 1, say so explicitly.
+2. **Say "ceiling of this environment", not "potential of the method".** The oracle uses information no real system has; present it as an upper bound, never as a result.
+3. **Do not claim "it can be developed more" without evidence.** More data helps only if the gap comes from too little data; it may come from limited information in the viewers, a belief that carries too little signal, or too little PPO tuning.
+
+**Tests that show where the gap comes from:**
+| Test | What it tells you |
+|---|---|
+| learning curve (does the score still rise at the end of training?) | if flat, more training steps will not help |
+| training-set size sweep (viewers and policy on 25%, 50%, 100% of data) | whether more data raises the score |
+| perception sweep (score as perception goes from perfect to the real belief, adding noise in steps) | where the loss comes from and how good the viewers must become |
+| tuning sweep (the PPO checklist in Section 128) | whether part of the gap is just tuning |
+
+**The claim "PPO reaches 43% of its ceiling" is about PPO alone; it does not show PPO beats DDQN.** The comparison needs DDQN with the same belief and the same oracle:
+| | No belief | Your belief | Perfect perception |
+|---|---|---|---|
+| PPO | ? | 0.40 (reported) | 0.93 (reported) |
+| DDQN | ? | ? | ? |
+
+How to read it: if DDQN also reaches about 43% with the same belief, the belief is the story, not the algorithm (a good result for the thesis, because the contribution is the belief and the graded response); if PPO beats DDQN only in noisy-belief columns, that is a finding to test further with equal tuning and several seeds; if DDQN also reaches about 0.93 with perfect perception, the learners are equal there.
+
+Suggested wording: "With perfect perception the agent reaches 0.93, so the task is solvable. Using our belief it reaches 0.40, closing about X% of the gap above a random policy. We test whether the remaining gap is due to data, viewer quality or tuning, and compare against DDQN under identical conditions."
+
+### 132. New contribution candidates (structure and basis; no coding in this chat)
+
+Novelty is judged from snippet-level searches only; every candidate needs the database sweep before any claim. None needs new theory.
+
+| # | Candidate | Question it answers | Why it might be new | Cost | Risk |
+|---|---|---|---|---|---|
+| 1 | Perception-gap benchmark | how much of the oracle gap does each belief close, and does that depend on the learner (PPO vs DDQN)? | an oracle already exists (0.93); a "fraction of gap closed" protocol across belief types and learners is a clean, reusable evaluation | low | may look like only an evaluation method |
+| 2 | Evidential belief with unknown state, used causally | do U, Omega and K carry decision-relevant information beyond the raw viewers (G3 vs G5) and beyond memory (G4)? | multi-viewer Dempster/Yager fusion, explicit U and graded ladder for IoT not found together, but Trust-By-Learning, Q-BIRD and SHIELD are close | medium | DS advantage may vanish under a fair test (reported once in anti-UAV work) |
+| 3 | Learner-versus-environment crossover map | when does DDQN win and when does PPO win (static replay, closed loop, drift, memory)? | gives the honest answer to "which is better" as a map | medium | result could be "DDQN everywhere" (still reportable) |
+| 4 | Active evidence-gathering action | when the belief says unknown (high U or Omega), should the agent take a cheap probing action (extra inspection, challenge a device, ask another viewer) before containing? | the ladder only contains; a probe rung treats unknown as a POMDP information problem | medium | needs a defensible effect model for the probe |
+| 5 | K-driven viewer trust under shift | can high conflict K automatically lower a viewer's trust when it meets a new protocol or environment? | answers the open question of how to choose alpha; cheap offline test first | low to medium | K may not rise reliably under shift |
+| 6 | Cost-conditioned policy ("caution dial") | can one trained agent follow an operator's setting for how costly a false block is, without retraining? | operators differ in tolerance; one policy plus a dial is practical | medium | multi-objective RL adds complexity |
+| 7 | Calibrated unknown belief | does m(U) mean what it says, and does calibration improve graded actions? | graded actions only make sense if the number is trustworthy | low | mostly an ablation |
+| 8 | Closed-loop IoT defense environment, released | a documented environment with calibrated traffic, action effects and held-out families | the gap survey found environments are enterprise-shaped | high | simulator-trust attack |
+
+**Recommendation (suggestion):** combine 1 + 2 + 3 as one story: "In IoT defense, perception matters more than the learner, and an evidential belief with an explicit unknown state closes more of the oracle gap than plain features or stacked viewers, for both PPO and DDQN." It fits the existing result (belief at 0.40 against oracle at 0.93) and turns PPO versus DDQN from a fight into a controlled factor. Add 5 (cheaper, offline) or 4 (more original, needs a probe model) as the extension.
+
+**Test every contribution against:** (1) the closest paper that could kill it; (2) a numeric pass/fail rule written before running; (3) what is reported if it fails.
+
+**Settle first:** run the database sweep for candidates 2, 4 and 6; fill the PPO/DDQN x (no belief / belief / oracle) table with seeds and equal tuning; resolve whether "possibility belief" means possibility theory or probability, because it decides how candidate 2 is worded.
+
+### 133. Next-step options and recommendation (as discussed)
+
+| # | Option | Why now | What it unblocks |
+|---|---|---|---|
+| 1 | Session 1 Steps 6 to 8: episode end and the response to U, sanity-check baselines (random, rule-based, oracle), one-page design | the postponed decisions; the environment cannot be built without them | the Gymnasium environment for all arms |
+| 2 | Experiment design: seeds, equal tuning budget, grid-edge check, confidence intervals, pre-registered pass/fail rules | the full answer to "how to test PPO vs DQN fairly" | a fair comparison protocol written before any run |
+| 3 | World models and MBRL basics | needed for the model-based arm and Candidate 1 in Paper 2 | the model-based arm |
+| 4 | Belief-in-PPO recap (short) | ties the belief module to the policy input | clear observation layout |
+| 5 | PPO confidence repair: one tiny example each for the nudge, advantage and clip | the user reported Steps 9 to 11 felt odd | confidence before tuning |
+| 6 | 6G and novelty search (query plan in Section 125 I) | decides positioning claims | safe wording in the proposal |
+
+Recommended order (suggestion): 1, then 2, then 5 and 4 in short form, then 3, with the 6G search in parallel when library access is available. Question to settle first if option 1 is picked: how long is a training episode and what ends it (earlier suggestion: 10 minutes, 120 steps at 5 s, early stop if a damage cap is hit). The user chose a plain recap of DQN and PPO first (Section 127) and then moved to the simulation results and contributions (Sections 129 to 132); option 1 is still open.
+
+### 134. Open items
+
+1. Confirm what the user's simulation measures (normalized return definition), whether it replays dataset rows or changes traffic after actions, and which score belongs to which setup (0.23, 0.12, 0.4, 0.93).
+2. Fill the table PPO and DDQN x (no belief / real belief / perfect perception) with at least 10 seeds and equal tuning; add random, threshold-rule and oracle baselines and the gamma = 0 check.
+3. Resolve "possibility belief": possibility theory or probability; if possibility, run it as its own arm against the Dempster-Shafer belief.
+4. Run the tests in Section 131 (learning curve, data-size sweep, perception sweep, tuning sweep) before claiming the gap "can be developed more".
+5. Decide the contribution direction (suggestion: 1 + 2 + 3, with 5 or 4 as the extension) and run the database sweep for each chosen candidate.
+6. Design environments E1 to E5 (Section 130) with predicted winners written before running.
+7. Postponed Session 1 decisions: episode end and U response, sanity-check baselines, action-effect numbers, device-selection rule, per-protocol mapping, reward weights, window and step.
+8. Check the DQN arm names D1, D2, D3 against the roadmap's "Section 135" and the old arm names (Section 94: D = model-based, E = DQN).
+9. Carry forward all earlier open items (Sections 66, 80, 92, 109, 122, 125 and 126).
