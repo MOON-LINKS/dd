@@ -7352,3 +7352,140 @@ Recommended order (suggestion): 1, then 2, then 5 and 4 in short form, then 3, w
 7. Postponed Session 1 decisions: episode end and U response, sanity-check baselines, action-effect numbers, device-selection rule, per-protocol mapping, reward weights, window and step.
 8. Check the DQN arm names D1, D2, D3 against the roadmap's "Section 135" and the old arm names (Section 94: D = model-based, E = DQN).
 9. Carry forward all earlier open items (Sections 66, 80, 92, 109, 122, 125 and 126).
+
+
+---
+
+## UPDATE — 27 November 2026 (new section only; everything above is unchanged)
+
+### [number to assign] Contribution candidates in plain words, and the new ideas that came out of the discussion
+
+**Status:** structure and basis only (no coding in this chat). Items marked (suggestion) are my proposals, not decisions. Items marked (verify) were not checked against sources. Novelty is judged from snippet-level searches only; no database sweep has been run for any candidate below. All numbers in examples are made up to show the idea. The user mentioned a recent attack on French blood fridges (temperature raised, blood packages ruined); I could not verify it, so it is used only as an illustration of the logic.
+
+#### A. The 8 candidates in plain words (from Section 132, one line each, with an everyday example)
+| # | Candidate | Plain idea | Everyday example |
+|---|---|---|---|
+| 1 | Perception-gap benchmark | measure how much of the gap between the real belief and the perfect-perception ceiling each way of "seeing" closes, and whether it depends on the learner (PPO vs DDQN) | a guard with a perfect feed catches almost everything, with the blurry real feed 40%; three fixes close 60%, 30% and 10% of the gap |
+| 2 | Evidential belief with an unknown state | the agent keeps belief, ignorance and disagreement as separate numbers, with a state for "something new"; show these numbers help the decision | odd traffic fits no known attack, so the agent shows high "unknown" and takes a gentle step |
+| 3 | Learner-versus-environment crossover map | map where PPO wins and where DDQN wins instead of arguing one is better | two drivers tested on dry road, rain and ice |
+| 4 | Active evidence-gathering action (probe) | when unsure, take a cheap "look closer" action before containing | a smart lock acts strangely; the agent checks identity first and only escalates if the check fails |
+| 5 | Conflict-driven trust | lower a viewer's weight automatically when disagreement rises (new protocol or environment) | two weather apps usually agree; one starts giving odd forecasts abroad, so trust it less |
+| 6 | Cost-conditioned policy (caution dial) | one trained agent that follows an operator setting for how costly a false block is | hospital monitors: very cautious; smart lights: act fast |
+| 7 | Calibrated unknown belief | "60% unknown" should be right about 60% of the time | a weather app saying 60% rain should be right on 60 of 100 such days |
+| 8 | Closed-loop environment, released | a documented practice world where actions change later traffic | a flight simulator for defenders |
+
+Groups: evaluation story (1, 3); belief story (2, 5, 7); new actions (4, 6); infrastructure (8). Suggested core (from Section 132): 1 + 2 + 3 as one story, with 5 or 4 as the extension. Updated ranking after this discussion is in section F.
+
+#### B. Candidate 4: the probe action (refined)
+**A plain ping is weak:** a spoofer on the same network can answer a ping as well as the real device. A useful probe tests something hard to fake.
+| Probe type | What it checks | Catch |
+|---|---|---|
+| ask a stronger detector or another viewer to look at the flow | nothing is sent to the device | costs compute, not traffic |
+| re-check the IP-to-MAC link (ARP or neighbor check) | whether two devices claim one identity | only catches simple spoofing |
+| timing or clock-skew fingerprint of the replies (the idea from Update 6) | whether it is the same physical hardware | needs enough replies |
+| challenge-response or rejoin (e.g. Zigbee rejoin, re-key) | whether it holds the real key | only works if the device supports it |
+- Risks (general knowledge, not tested here): extra traffic and delay; an unauthenticated probe can itself be abused; a probe can tell the attacker they were noticed.
+- **Scope widens to spoofing and MAC masking**, not only malware-spread defense. This connects to the identity-uncertainty thread (Updates 2 to 8). Keep it as one scenario inside the probe experiment, not a new pillar (suggestion).
+- **Fit in the agent:** the probe is one more action (wait, probe, rate-limit, block, isolate) with a small cost; its answer arrives next step as new evidence, like an extra viewer. In POMDP terms this is a sensing action. Rule of thumb (suggestion): probe when Omega (ignorance) or K (conflict) is high.
+- **Simulation needs (assumptions, state them openly):** a chance that a genuine device passes the probe and a spoofer fails (illustrative 90% and 20%). The CICIoT2023 spoofing category and the identity-corruption knobs (Update 2, section 8) can feed this.
+
+#### C. Candidate 5: flexible discounting (user idea) and its caveats
+- Discounting already exists (trust alpha per viewer, Section 13.6). The candidate is only about **how alpha is set**. User idea: re-set each viewer's alpha every N steps (e.g. 100) from that viewer's recent accuracy.
+- **Three versions to test (suggestion):** (a) fixed alpha; (b) accuracy-based update every N steps; (c) label-free update (agreement between viewers or K).
+- Caveats: (1) accuracy-based needs labels; in simulation the truth is known, live it is not (labels could arrive late from operator feedback). (2) 100 steps is noisy, because attacks are rare and a window may hold almost no attack samples; use a rolling average with a minimum number of attack samples. (3) **K trap:** K also rises when a real new attack makes viewers legitimately disagree, which is exactly the 0-day signal to keep, so down-weighting viewers because of K could hide it. A safer label-free signal (untested suggestion): one viewer disagreeing with the others while the traffic looks normal.
+
+#### D. Candidate 6: criticality-aware policy, VIP list and VIP VLAN (user ideas)
+**Problem found:** if a "caution dial" says never block the heart monitor, an attacker who spoofs the monitor's MAC gets protection (logic holds whatever the real incident was).
+
+**Design fixes (suggestions):**
+1. The dial changes the **kind** of action, not whether to act. For critical devices: block commands or the attacker's path, keep read-only telemetry, switch to a safe local mode, alert a human.
+2. Criticality raises both costs (wrong block and missed attack), so the dial sets two numbers, not one.
+3. Criticality comes from the operator's inventory tied to a verified identity, never from what the device claims.
+4. The dial's range is limited: it can never turn the response fully off.
+5. Test it as an attack: a spoofer impersonates a critical device to induce caution.
+
+**VIP list and alarm (user idea, refined):**
+- VIP-ness is a known flag from the operator's inventory, so it goes into the observation like device type; the "alarm" is a mode the system enters plus a request for a human check.
+- MAC alone is spoofable, so the VIP entry must be tied to a stronger identity: physical port or switch location, certificate or key, or the timing fingerprint from Update 6.
+- The human check must go **out-of-band** (e.g. is the real monitor still reporting from its own port?). Two sources claiming one MAC is strong evidence of spoofing.
+- Humans are slow and attacks are not, so while waiting the system takes an immediate, reversible, safe step (restrict write or command traffic from the suspicious source, keep real telemetry, alert).
+- The alarm itself can be abused (an attacker spoofs a VIP MAC on purpose so the system cuts the real device); therefore isolate the suspicious source or path, never the genuine device.
+- Too many alarms cause alert fatigue, so a false alarm needs a cost in the reward.
+- **Human verification as a sensing action:** a request with a cost, a delay (illustrative 5 to 30 steps) and a chance of a correct answer (illustrative 95%); the answer arrives later as new evidence, like a slow, expensive viewer.
+
+**VIP VLAN (user idea):** a separate network segment for VIP devices is standard practice for medical-device segmentation (general knowledge, verify before citing).
+- Benefits: fewer attack paths (limits lateral movement, the Paper 3 pivot problem); a clean signal (a VIP MAC seen **outside** the VIP VLAN is suspicious by itself, a ready-made spoofing alarm); a new graded action, **move a suspicious device to a quarantine VLAN**, between rate-limit and block (network access control does this in practice, verify).
+- The hub-based agent still reaches the traffic if it is the gateway between VLANs, sees a mirror (SPAN) port, or runs on the switch or firewall. Being the gateway is best, because it can also enforce policy.
+- Cautions: (1) assigning VLAN membership by MAC lets a spoofer into the VIP VLAN; assign by physical port or 802.1X authentication; (2) VLANs can be bypassed if misconfigured (VLAN hopping), so they reduce risk but do not remove it; (3) consumer hubs and routers mostly lack VLANs, so this fits hospitals, offices and smart buildings better than the "one hub per home" framing; state which setting is assumed; (4) do not quarantine the genuine VIP device, quarantine the suspicious source; (5) CICIoT2023 probably does not label VLANs (unverified), so VLAN would be a simulator feature, not a dataset feature.
+- Fit in the design: observation gets "which segment is this device in" and "is this MAC seen on the wrong segment"; action ladder (suggestion): wait, probe or request human verification, rate-limit, move to quarantine VLAN, block, isolate and alert; alarm rule: a VIP MAC outside the VIP segment triggers the alarm state directly; simulation: VLAN as a flag per device and an assumed action effect (e.g. quarantine halves reach to other devices and keeps basic internet).
+- **Novelty note:** VLAN segmentation, quarantine and access control are known tools. A possible contribution is the combination: a belief-driven agent choosing when to escalate through probe, quarantine and block using VIP status and wrong-segment evidence. No search was run for prior work on this combination.
+
+#### E. Candidate 7 correction, and candidate 8 demotion
+- **Three different numbers (do not mix):** detection rate (the belief catches 40% of 0-days); calibration (when it says "70% unknown", is it truly unknown about 70% of the time?); prevalence (how many 0-days really exist).
+- User idea was to multiply the real 0-day share by 40%. Correction: **divide, not multiply.** If the belief flagged 8 and catches 40%, the real count is about 8 / 0.4 = 20; if 2 of the 8 were false alarms, about (8 - 2) / 0.4 = 15 (general knowledge, verify). This assumes the 40% would hold on future 0-days, a big assumption, and it measures prevalence, not calibration.
+- **Candidate 8 demoted** from a headline contribution to a documented by-product. A real-time simulator is not needed: a time-stepped Python simulation (replayed CICIoT2023 windows plus the MMPP plus hand-written action effects such as "rate-limit halves the rate") runs free on a laptop or Colab.
+
+#### F. Viewers and models: two parallel models, one decision-maker (user question)
+**Question:** can two parallel algorithms run in the same MBRL, one for known and one for unknown attacks, or should one algorithm hold both?
+**Answer (suggestion):** two parallel **perception models**, one **decision-maker**. The known-attack viewer and the normality viewer already run side by side on the same window; their outputs go into the belief; one policy reads the belief and picks the action.
+- Reasons not to use two separate RL agents: known and unknown are two kinds of evidence, not two different jobs; both end at the same ladder; a referee would be needed for clashes, which is exactly where the decision matters; two agents double the tuning and each sees only part of the picture.
+- One real reason to split on the **action** side: a known attack often has a known best response (a playbook), an unknown one has none.
+| Arm | Design | Role |
+|---|---|---|
+| A1 | one policy reads the whole belief (known families, U, Omega, K) | main design |
+| A2 | hard rule table on the two viewers | easy-to-explain baseline |
+| A3 | playbook for known families plus RL only for unknown and clash cases | hybrid |
+| A4 | two separate RL agents plus a referee | optional, to show whether splitting helps at all |
+Hypothesis: A1 is enough (to test, not a claim). (Arm names A1 to A4 are new here; do not confuse them with the G1 to G5 and D1 to D3 arms.)
+
+**User's rule logic (truth table), kept as baseline A2 with three adjustments:**
+| Normality viewer | Known-attack viewer | Reading |
+|---|---|---|
+| odd | no known match (low evidence) | 0-day |
+| normal | attack X | known attack X |
+| normal | normal | normal |
+| odd | attack X | clash |
+- It is a hard-rule version of what DS fusion does softly; keep it as an extra baseline because it is easy to explain.
+- "Low % on known attacks" is a weak signal if the classifier is confidently wrong on a new attack; use the known-attack viewer's own ignorance (EDL's u) as well.
+- "The 0-day wins every clash" would create many false 0-days (a known attack with an odd pattern would be called new). Treat a clash as "abnormal, family unclear" and answer with a gentle step or a probe.
+- The user's observation that unknown attacks often look weird and get misclassified as a known attack is exactly the case where the known-attack viewer is confident and wrong, so keep its ignorance reading in the fusion.
+
+**The user's build:** three viewers (normality, known-attack types, MMPP). The same setup works with the truth-table arm: the rules just use two of them, and the MMPP supplies the burst-structure evidence.
+
+#### G. World model versus viewers (the MB in MBRL)
+- **Viewers = perception** (what is happening in this window). **World model = prediction** (what the next windows look like if this action is taken), used to practice on imagined episodes.
+- Its job is the same in every arm (three-viewer setup or two-model rule setup): produce the next windows after an action, then run the same frozen viewers and belief on those imagined windows, so perception is identical in real and imagined data.
+| Part | Job |
+|---|---|
+| MMPP | burst and arrival structure of the traffic |
+| Learned network (GRU) | what the MMPP gets wrong, and how traffic reacts to the action |
+| Action effects | hand-written assumptions, since CICIoT2023 never recorded a defender acting |
+- Cautions (from earlier sections): keep the normality GRU (viewer) and the world-model GRU separate (the world model must see the action and attack traffic); if the MMPP is both viewer and generator, imagined traffic always looks natural to it, so use separate fits; DQN can add imagined cards to its replay memory, while PPO must regenerate imagined data as the policy changes (general knowledge, verify).
+- **Limit:** imagined practice cannot contain a true 0-day (the world model only imagines what it has seen data for). 0-day results must come from real held-out families; the self-play idea (Idea F) is a possible way to generate unknown attacks.
+
+#### H. The new ideas as a list (what to add to the roadmap)
+| # | Idea | Type | From |
+|---|---|---|---|
+| 1 | probe action with hard-to-fake probes; widens scope to spoofing and MAC masking | refinement of candidate 4 | user |
+| 2 | flexible discounting every N steps by each viewer's recent accuracy; three versions; label and K caveats | refinement of candidate 5 | user |
+| 3 | VIP list and alarm state tied to verified identity | new, merges into candidate 6 | user |
+| 4 | VIP VLAN, wrong-segment alarm, quarantine-VLAN action | new, extends candidate 6 | user |
+| 5 | spoof-the-caution attack as a test scenario | new test | user |
+| 6 | calibration versus detection rate versus prevalence (divide, not multiply) | correction to candidate 7 | user |
+| 7 | human verification as a delayed, costly sensing action | new, merges 4 and 6 | discussion |
+| 8 | two parallel perception models, one decision-maker; arms A1 to A4 | new design comparison | user |
+| 9 | rule truth table as baseline A2 | new baseline arm | user |
+| 10 | world model is one model with the same job in every arm; imagined practice has no true 0-day | clarification | discussion |
+| 11 | environment demoted to a by-product (time-stepped Python simulation) | change to candidate 8 | user |
+| 12 | candidates 4 and 6 now merge into one: sensing and criticality-aware escalation (probe, human verification, quarantine VLAN) | roadmap update | discussion |
+
+**Updated recommendation (suggestion):** core story stays 1 + 2 + 3; the extension is now "sensing and criticality-aware escalation" (merged 4 + 6), with 5 as a cheaper offline extension. Ranking of risk: 6 (as an on/off dial) is the riskiest; as a verified-VIP policy with quarantine it is much safer.
+
+#### I. Open items
+1. Deepen candidates 4 and 6 together: the exact research question, the closest papers that could kill it, the effect model (probe pass and fail chances, human-check delay and accuracy, quarantine effect), and a numeric pass/fail rule written before running.
+2. Run the database sweep for candidates 2, 4 and 6 (with spoofing, MAC randomization, network access control, quarantine VLAN, sensing actions in POMDPs, human-in-the-loop escalation as query terms). Closest neighbors found so far: Trust-By-Learning, Q-BIRD, SHIELD.
+3. Decide the setting for candidate 6 (hospital, building or home with a VLAN-capable gateway) and state it.
+4. Settle whether to include the alarm and human verification in the first simulation or in a later one (they need extra environment features: VIP flag, segment flag, delayed observation).
+5. Check that the VLAN and spoofing claims (general knowledge) hold against references before citing.
+6. Resolve the open items from Section 134 (the user's simulation numbers, the meaning of "possibility belief", the table PPO and DDQN by no belief, real belief and perfect perception).
+7. Carry forward all earlier open items.
